@@ -57,10 +57,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import android.location.LocationManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cz.litoj.grs.CoordinateFormat
+import cz.litoj.grs.GpsEvent
 import cz.litoj.grs.GpsSpoofViewModel
 import cz.litoj.grs.TextRecognizer
 import kotlinx.coroutines.CoroutineScope
@@ -93,50 +95,42 @@ fun GpsSpoofScreen(
         updatePermissionStates(context, viewModel)
     }
 
-    LaunchedEffect(uiState.mockError) {
-        uiState.mockError?.let {
-            snackbarHostState.showSnackbar(it)
-        }
-    }
-
-    // Show a snackbar when newly-read coordinates are too far from the current ones.
-    // The user can tap "Set" to accept them, or dismiss to keep the current coordinates.
-    LaunchedEffect(uiState.pendingCoordinates) {
-        uiState.pendingCoordinates ?: return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
-            message = "Tap for ${uiState.pendingDisplayText}",
-            actionLabel = "Set",
-            duration = SnackbarDuration.Long,
-        )
-        when (result) {
-            SnackbarResult.ActionPerformed -> viewModel.acceptPendingCoordinates()
-            SnackbarResult.Dismissed -> viewModel.dismissPendingCoordinates()
-        }
-    }
-
-    // Check GPS on first composition, show toast if disabled
+    // Collect one-time events from the ViewModel
     LaunchedEffect(Unit) {
-        viewModel.checkGpsEnabled()
-        if (!viewModel.uiState.value.isGpsEnabled) {
-            Toast.makeText(context, "GPS is disabled. Please enable it in settings.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    // Re-check GPS whenever app regains focus
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.checkGpsEnabled()
-                if (!viewModel.uiState.value.isGpsEnabled) {
-                    Toast.makeText(context, "GPS is disabled. Please enable it in settings.", Toast.LENGTH_LONG).show()
+        viewModel.events.collect { event ->
+            when (event) {
+                is GpsEvent.MockError -> {
+                    snackbarHostState.showSnackbar(event.message)
+                }
+                is GpsEvent.PendingCoordinates -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "Tap for ${event.displayText}",
+                        actionLabel = "Set",
+                        duration = SnackbarDuration.Long,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        viewModel.applyCoordinates(event.coordinates)
+                    }
                 }
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
+    }
+
+    // Check GPS on launch and whenever app regains focus; show toast if disabled
+    val checkGps = {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            Toast.makeText(context, "GPS is disabled. Please enable it in settings.", Toast.LENGTH_LONG).show()
         }
+    }
+    LaunchedEffect(Unit) { checkGps() }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) checkGps()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
 

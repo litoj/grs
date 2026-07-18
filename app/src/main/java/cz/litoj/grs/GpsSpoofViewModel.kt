@@ -1,14 +1,16 @@
 package cz.litoj.grs
 
 import android.content.Context
-import android.location.LocationManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cz.litoj.grs.GpsSpoofViewModel.Companion.MAX_COORDINATE_DIFF_DEG
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -29,22 +31,24 @@ data class PermissionState(
 data class UiState(
     val currentCoordinates: GpsCoordinates? = null,
     val selectedFormat: CoordinateFormat = CoordinateFormat.AUTO,
-    val detectedFormat: CoordinateFormat = CoordinateFormat.DEGREES,
-    val isMockingLocation: Boolean = false,
-    val lastDetectedText: String? = null,
     val latitudeText: String = "",
     val longitudeText: String = "",
-    val mockError: String? = null,
-    val scanCount: Int = 0,
     val lastRawText: String = "",
-    val isGpsEnabled: Boolean = true,
-    /** Coordinates that differ too much from current ones; awaiting user confirmation. */
-    val pendingCoordinates: GpsCoordinates? = null,
-    /** Formatted text for the pending-coordinates snackbar (e.g. "50.123 14.456"). */
-    val pendingDisplayText: String = "",
-    /** Format detected for the pending coordinates. */
-    val pendingFormat: CoordinateFormat = CoordinateFormat.DEGREES,
 )
+
+/**
+ * One-time UI events emitted by the ViewModel.
+ */
+sealed interface GpsEvent {
+    /** Mock location failed — show the user an error message. */
+    data class MockError(val message: String) : GpsEvent
+
+    /** New coordinates differ too much from current — ask user to confirm. */
+    data class PendingCoordinates(
+        val coordinates: GpsCoordinates,
+        val displayText: String
+    ) : GpsEvent
+}
 
 /**
  * ViewModel for GPS Spoofing functionality.
@@ -56,7 +60,11 @@ class GpsSpoofViewModel : ViewModel() {
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     private val _permissionState = MutableStateFlow(PermissionState())
-    val permissionState: StateFlow<PermissionState> = _permissionState.asStateFlow()
+    val permissionState: StateFlow<PermissionState> =
+        _permissionState.asStateFlow()
+
+    private val _events = Channel<GpsEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
 
     private var locationMocker: LocationMocker? = null
     private var appContext: Context? = null
@@ -67,6 +75,7 @@ class GpsSpoofViewModel : ViewModel() {
     companion object {
         /** Interval for periodic mock location refresh, in milliseconds. */
         private const val MOCK_REFRESH_INTERVAL_MS = 1000L
+
         /** Max allowed difference (in degrees) between current and newly-read coordinates. */
         private const val MAX_COORDINATE_DIFF_DEG = 0.5
     }
@@ -79,113 +88,64 @@ class GpsSpoofViewModel : ViewModel() {
     }
 
     /**
-     * Check whether the GPS provider is enabled and update [UiState.isGpsEnabled].
-     */
-    fun checkGpsEnabled() {
-        val ctx = appContext ?: return
-        val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val enabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-        _uiState.update { it.copy(isGpsEnabled = enabled) }
-    }
-
-    /**
      * Called when text is recognized from the camera. Parses coordinates, updates state,
      * and automatically updates the mock location.
      *
      * @return true if valid coordinates were parsed from the text, false otherwise.
      */
     fun onTextRecognized(text: String): Boolean {
-        if (text.isBlank()) {
-            // Clear stale OCR text so the preview line hides
-            _uiState.update { it.copy(lastRawText = "") }
-            return false
-        }
-
         // Always store raw text so user can see what OCR detected
         _uiState.update { it.copy(lastRawText = text) }
 
-        val result = GpsCoordinateParser.parseFromText(text)
-        if (result == null) {
-            android.util.Log.d("GpsSpoofViewModel", "No coordinates found in: '${text.take(100)}'")
+        if (text.isBlank()) {
             return false
         }
 
-        android.util.Log.d("GpsSpoofViewModel", "Parsed: ${result.coordinates} (${result.detectedFormat})")
+        val result = GpsCoordinateParser.parseFromText(text) ?: return false
 
         val current = _uiState.value.currentCoordinates
-        if (current != null && isTooFar(current, result.coordinates)) {
-            // Coordinates differ too much — store as pending, ask user to confirm
-            android.util.Log.d("GpsSpoofViewModel", "Too far from current ($current), pending: ${result.coordinates}")
-            val pendingDisplay = "${result.coordinates.latitudeString(result.detectedFormat)} ${result.coordinates.longitudeString(result.detectedFormat)}"
-            _uiState.update {
-                it.copy(
-                    pendingCoordinates = result.coordinates,
-                    pendingDisplayText = pendingDisplay,
-                    pendingFormat = result.detectedFormat,
-                )
-            }
+        if (current != null && isTooFar(current, result)) {
+            // Coordinates differ too much — ask user to confirm via one-time event
+            val displayText = "${result.latitudeString(result.format)} ${
+                result.longitudeString(result.format)
+            }"
+            _events.trySend(GpsEvent.PendingCoordinates(result, displayText))
             return true
         }
 
-        val format = _uiState.value.selectedFormat
-        val displayFormat = if (format == CoordinateFormat.AUTO) result.detectedFormat else format
-
-        _uiState.update {
-            it.copy(
-                currentCoordinates = result.coordinates,
-                detectedFormat = result.detectedFormat,
-                lastDetectedText = text,
-                latitudeText = result.coordinates.latitudeString(displayFormat),
-                longitudeText = result.coordinates.longitudeString(displayFormat),
-                scanCount = it.scanCount + 1,
-                pendingCoordinates = null,
-                pendingDisplayText = "",
-            )
-        }
-
-        // Automatically update mock location
-        autoMock(result.coordinates)
+        applyCoordinates(result)
         return true
     }
 
     /**
-     * Accept the pending coordinates that were too far from the current ones.
-     * Applies them as the new current coordinates and updates the mock location.
+     * Apply coordinates as the new current value, update the text fields, and mock location.
+     * Called from OCR parsing or when the user accepts pending coordinates.
      */
-    fun acceptPendingCoordinates() {
-        val pending = _uiState.value.pendingCoordinates ?: return
-        val pendingFmt = _uiState.value.pendingFormat
-        val format = _uiState.value.selectedFormat
-        val displayFormat = if (format == CoordinateFormat.AUTO) pendingFmt else format
+    fun applyCoordinates(coords: GpsCoordinates) {
+        val selected = _uiState.value.selectedFormat
+        val displayFormat =
+            if (selected == CoordinateFormat.AUTO) coords.format else selected
 
         _uiState.update {
             it.copy(
-                currentCoordinates = pending,
-                detectedFormat = pendingFmt,
-                latitudeText = pending.latitudeString(displayFormat),
-                longitudeText = pending.longitudeString(displayFormat),
-                scanCount = it.scanCount + 1,
-                pendingCoordinates = null,
-                pendingDisplayText = "",
+                currentCoordinates = coords,
+                latitudeText = coords.latitudeString(displayFormat),
+                longitudeText = coords.longitudeString(displayFormat),
             )
         }
-        autoMock(pending)
-    }
 
-    /**
-     * Dismiss the pending coordinates without applying them.
-     */
-    fun dismissPendingCoordinates() {
-        _uiState.update {
-            it.copy(pendingCoordinates = null, pendingDisplayText = "")
-        }
+        // Automatically update mock location
+        autoMock(coords)
     }
 
     /**
      * Check whether the new coordinates differ from the current ones by more than
      * [MAX_COORDINATE_DIFF_DEG] in either latitude or longitude.
      */
-    private fun isTooFar(current: GpsCoordinates, new: GpsCoordinates): Boolean {
+    private fun isTooFar(
+        current: GpsCoordinates,
+        new: GpsCoordinates
+    ): Boolean {
         return kotlin.math.abs(current.latitude - new.latitude) > MAX_COORDINATE_DIFF_DEG ||
             kotlin.math.abs(current.longitude - new.longitude) > MAX_COORDINATE_DIFF_DEG
     }
@@ -195,14 +155,20 @@ class GpsSpoofViewModel : ViewModel() {
      */
     fun updateLatitudeText(text: String) {
         val coords = _uiState.value.currentCoordinates
-        val format = _uiState.value.selectedFormat
-        val displayFormat = if (format == CoordinateFormat.AUTO) _uiState.value.detectedFormat else format
+        val selected = _uiState.value.selectedFormat
+        val displayFormat =
+            if (selected == CoordinateFormat.AUTO) coords?.format
+                ?: CoordinateFormat.DEGREES else selected
 
         _uiState.update { it.copy(latitudeText = text) }
 
         val parsedLat = GpsCoordinateParser.parseLatitude(text, displayFormat)
         if (parsedLat != null) {
-            val newCoords = GpsCoordinates(parsedLat, coords?.longitude ?: 0.0)
+            val newCoords = GpsCoordinates(
+                parsedLat,
+                coords?.longitude ?: 0.0,
+                coords?.format ?: CoordinateFormat.DEGREES
+            )
             _uiState.update { it.copy(currentCoordinates = newCoords) }
             autoMock(newCoords)
         }
@@ -213,14 +179,20 @@ class GpsSpoofViewModel : ViewModel() {
      */
     fun updateLongitudeText(text: String) {
         val coords = _uiState.value.currentCoordinates
-        val format = _uiState.value.selectedFormat
-        val displayFormat = if (format == CoordinateFormat.AUTO) _uiState.value.detectedFormat else format
+        val selected = _uiState.value.selectedFormat
+        val displayFormat =
+            if (selected == CoordinateFormat.AUTO) coords?.format
+                ?: CoordinateFormat.DEGREES else selected
 
         _uiState.update { it.copy(longitudeText = text) }
 
         val parsedLon = GpsCoordinateParser.parseLongitude(text, displayFormat)
         if (parsedLon != null) {
-            val newCoords = GpsCoordinates(coords?.latitude ?: 0.0, parsedLon)
+            val newCoords = GpsCoordinates(
+                coords?.latitude ?: 0.0,
+                parsedLon,
+                coords?.format ?: CoordinateFormat.DEGREES
+            )
             _uiState.update { it.copy(currentCoordinates = newCoords) }
             autoMock(newCoords)
         }
@@ -235,7 +207,8 @@ class GpsSpoofViewModel : ViewModel() {
             return
         }
 
-        val displayFormat = if (format == CoordinateFormat.AUTO) _uiState.value.detectedFormat else format
+        val displayFormat =
+            if (format == CoordinateFormat.AUTO) coords.format else format
 
         _uiState.update {
             it.copy(
@@ -252,24 +225,21 @@ class GpsSpoofViewModel : ViewModel() {
      */
     private fun autoMock(coordinates: GpsCoordinates) {
         val ctx = appContext ?: return
-        val mocker = locationMocker ?: LocationMocker(ctx).also { locationMocker = it }
+        if (locationMocker == null) {
+            locationMocker = LocationMocker(ctx)
 
-        if (!_uiState.value.isMockingLocation) {
-            // First time: start mocking
-            android.util.Log.d("GpsSpoofViewModel", "autoMock: starting mock at ${coordinates.latitude}, ${coordinates.longitude}")
-            val success = mocker.startMocking(coordinates.latitude, coordinates.longitude)
-            _uiState.update {
-                it.copy(
-                    isMockingLocation = success,
-                    mockError = if (success) null else "Set this app as mock location app in Developer Options",
-                )
-            }
-            if (success) {
+            if (locationMocker?.startMocking(
+                    coordinates.latitude,
+                    coordinates.longitude
+                ) == true
+            )
                 startMockRefresh()
-            }
         } else {
             // Already mocking: just update the location
-            mocker.updateMockLocation(coordinates.latitude, coordinates.longitude)
+            locationMocker?.updateMockLocation(
+                coordinates.latitude,
+                coordinates.longitude
+            )
         }
     }
 
@@ -284,22 +254,12 @@ class GpsSpoofViewModel : ViewModel() {
             while (isActive) {
                 delay(MOCK_REFRESH_INTERVAL_MS)
                 val coords = _uiState.value.currentCoordinates ?: continue
-                val mocker = locationMocker ?: continue
-                if (_uiState.value.isMockingLocation) {
-                    mocker.updateMockLocation(coords.latitude, coords.longitude)
-                }
+                locationMocker?.updateMockLocation(
+                    coords.latitude,
+                    coords.longitude
+                )
             }
         }
-    }
-
-    /**
-     * Stop mocking location
-     */
-    fun stopMocking() {
-        mockRefreshJob?.cancel()
-        mockRefreshJob = null
-        locationMocker?.stopMocking()
-        _uiState.update { it.copy(isMockingLocation = false) }
     }
 
     /**
