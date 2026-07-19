@@ -19,7 +19,8 @@ private const val TAG = "TextRecognizer"
  */
 class TextRecognizer {
 
-    private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private val textRecognizer =
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
     /**
      * Process an image frame and extract text from the center scan-box region.
@@ -48,7 +49,10 @@ class TextRecognizer {
         val bitmap = this.toBitmap()
         val rotationDegrees = this.imageInfo.rotationDegrees
 
-        Log.d(TAG, "Original bitmap: ${bitmap.width}x${bitmap.height}, rotation=$rotationDegrees")
+        Log.d(
+            TAG,
+            "Original bitmap: ${bitmap.width}x${bitmap.height}, rotation=$rotationDegrees"
+        )
 
         // toBitmap() returns the image in sensor orientation (not rotated for display).
         // For a phone in portrait with 90° rotation, the bitmap is landscape (e.g. 480x640).
@@ -81,7 +85,10 @@ class TextRecognizer {
         val w = cropW.coerceAtMost(bitmap.width - left)
         val h = cropH.coerceAtMost(bitmap.height - top)
 
-        Log.d(TAG, "Cropping to: left=$left top=$top w=$w h=$h (from ${bitmap.width}x${bitmap.height})")
+        Log.d(
+            TAG,
+            "Cropping to: left=$left top=$top w=$w h=$h (from ${bitmap.width}x${bitmap.height})"
+        )
 
         val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, w, h)
         return InputImage.fromBitmap(croppedBitmap, rotationDegrees)

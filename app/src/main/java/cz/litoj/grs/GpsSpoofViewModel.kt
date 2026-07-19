@@ -1,29 +1,12 @@
 package cz.litoj.grs
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import cz.litoj.grs.GpsSpoofViewModel.Companion.MAX_COORDINATE_DIFF_DEG
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-
-/**
- * State representing permission status for required permissions
- */
-data class PermissionState(
-    val cameraPermissionGranted: Boolean = false,
-    val locationPermissionGranted: Boolean = false,
-    val backgroundLocationPermissionGranted: Boolean = false,
-    val mockLocationPermissionGranted: Boolean = false,
-)
 
 /**
  * UI state for GPS Spoof screen
@@ -52,44 +35,30 @@ sealed interface GpsEvent {
 
 /**
  * ViewModel for GPS Spoofing functionality.
- * Automatically mocks location whenever coordinates are available.
+ * Holds coordinate state and parses OCR text. Mocking is handled by the UI layer.
  */
 class GpsSpoofViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
-    private val _permissionState = MutableStateFlow(PermissionState())
-    val permissionState: StateFlow<PermissionState> =
-        _permissionState.asStateFlow()
-
     private val _events = Channel<GpsEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
-    private var locationMocker: LocationMocker? = null
-    private var appContext: Context? = null
-
-    /** Periodic mock refresh job — keeps the mock alive even when the camera is closed. */
-    private var mockRefreshJob: Job? = null
-
     companion object {
-        /** Interval for periodic mock location refresh, in milliseconds. */
-        private const val MOCK_REFRESH_INTERVAL_MS = 1000L
-
         /** Max allowed difference (in degrees) between current and newly-read coordinates. */
         private const val MAX_COORDINATE_DIFF_DEG = 0.5
     }
 
     /**
-     * Store the application context for mocking. Call this from the Activity.
+     * Emit a mock error event to be shown to the user.
      */
-    fun setAppContext(context: Context) {
-        appContext = context.applicationContext
+    fun emitMockError(message: String) {
+        _events.trySend(GpsEvent.MockError(message))
     }
 
     /**
-     * Called when text is recognized from the camera. Parses coordinates, updates state,
-     * and automatically updates the mock location.
+     * Called when text is recognized from the camera. Parses coordinates and updates state.
      *
      * @return true if valid coordinates were parsed from the text, false otherwise.
      */
@@ -118,7 +87,7 @@ class GpsSpoofViewModel : ViewModel() {
     }
 
     /**
-     * Apply coordinates as the new current value, update the text fields, and mock location.
+     * Apply coordinates as the new current value and update the text fields.
      * Called from OCR parsing or when the user accepts pending coordinates.
      */
     fun applyCoordinates(coords: GpsCoordinates) {
@@ -133,9 +102,6 @@ class GpsSpoofViewModel : ViewModel() {
                 longitudeText = coords.longitudeString(displayFormat),
             )
         }
-
-        // Automatically update mock location
-        autoMock(coords)
     }
 
     /**
@@ -170,7 +136,6 @@ class GpsSpoofViewModel : ViewModel() {
                 coords?.format ?: CoordinateFormat.DEGREES
             )
             _uiState.update { it.copy(currentCoordinates = newCoords) }
-            autoMock(newCoords)
         }
     }
 
@@ -194,7 +159,6 @@ class GpsSpoofViewModel : ViewModel() {
                 coords?.format ?: CoordinateFormat.DEGREES
             )
             _uiState.update { it.copy(currentCoordinates = newCoords) }
-            autoMock(newCoords)
         }
     }
 
@@ -217,73 +181,5 @@ class GpsSpoofViewModel : ViewModel() {
                 longitudeText = coords.longitudeString(displayFormat),
             )
         }
-    }
-
-    /**
-     * Automatically start or update the mock location with the given coordinates.
-     * If mocking hasn't started yet, start it. If already mocking, just update the location.
-     */
-    private fun autoMock(coordinates: GpsCoordinates) {
-        val ctx = appContext ?: return
-        if (locationMocker == null) {
-            locationMocker = LocationMocker(ctx)
-
-            if (locationMocker?.startMocking(
-                    coordinates.latitude,
-                    coordinates.longitude
-                ) == true
-            )
-                startMockRefresh()
-        } else {
-            // Already mocking: just update the location
-            locationMocker?.updateMockLocation(
-                coordinates.latitude,
-                coordinates.longitude
-            )
-        }
-    }
-
-    /**
-     * Start a periodic refresh of the mock location.
-     * This ensures that when microG's fused service briefly polls GPS, it receives
-     * a fresh mock location (setTestProviderLocation only delivers to active listeners).
-     */
-    private fun startMockRefresh() {
-        mockRefreshJob?.cancel()
-        mockRefreshJob = viewModelScope.launch {
-            while (isActive) {
-                delay(MOCK_REFRESH_INTERVAL_MS)
-                val coords = _uiState.value.currentCoordinates ?: continue
-                locationMocker?.updateMockLocation(
-                    coords.latitude,
-                    coords.longitude
-                )
-            }
-        }
-    }
-
-    /**
-     * Update permission states
-     */
-    fun updatePermissionStates(
-        cameraGranted: Boolean,
-        locationGranted: Boolean,
-        backgroundLocationGranted: Boolean = false,
-        mockLocationGranted: Boolean = false,
-    ) {
-        _permissionState.update {
-            it.copy(
-                cameraPermissionGranted = cameraGranted,
-                locationPermissionGranted = locationGranted,
-                backgroundLocationPermissionGranted = backgroundLocationGranted,
-                mockLocationPermissionGranted = mockLocationGranted,
-            )
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        mockRefreshJob?.cancel()
-        locationMocker?.cleanup()
     }
 }
