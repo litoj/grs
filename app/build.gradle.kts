@@ -1,31 +1,59 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
 	alias(libs.plugins.android.application)
 	alias(libs.plugins.kotlin.compose)
 }
 
 android {
-	namespace = "cz.litoj.grs"
+    namespace = "cz.litoj.grs"
 	compileSdk {
-		version = release(36) {
+		version = release(37) {
 			minorApiLevel = 1
 		}
 	}
 
 	defaultConfig {
 		applicationId = "cz.litoj.grs"
-		minSdk = 30
-		targetSdk = 36
+		minSdk = 23
+		targetSdk = 37
 		versionCode = 1
 		versionName = "1.0"
 
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 	}
 
+	// Release signing config — loaded from keystore.properties (not in VCS).
+	// If the file is absent (e.g. CI / F-Droid builds), the release type
+	// falls back to the debug signing config so the build still works.
+	val keystoreProperties = Properties()
+	val keystoreFile = rootProject.file("keystore.properties")
+	if (keystoreFile.exists()) {
+		keystoreProperties.load(FileInputStream(keystoreFile))
+	}
+
+	signingConfigs {
+		create("release") {
+			if (keystoreProperties.containsKey("storeFile")) {
+				storeFile = file(keystoreProperties.getProperty("storeFile"))
+				storePassword = keystoreProperties.getProperty("storePassword")
+				keyAlias = keystoreProperties.getProperty("keyAlias")
+				keyPassword = keystoreProperties.getProperty("keyPassword")
+			}
+		}
+	}
+
 	buildTypes {
 		release {
 			optimization {
-				enable = false
+				enable = true
 			}
+			proguardFiles(
+				getDefaultProguardFile("proguard-android-optimize.txt"),
+				"proguard-rules.pro",
+			)
+			signingConfig = signingConfigs.getByName("release")
 		}
 	}
 	compileOptions {
@@ -35,20 +63,17 @@ android {
 	buildFeatures {
 		compose = true
 	}
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
 }
 
 dependencies {
 	implementation(platform(libs.androidx.compose.bom))
 	implementation(libs.androidx.activity.compose)
 	implementation(libs.androidx.compose.material3)
-	implementation("androidx.compose.material:material-icons-extended:1.7.8")
-	implementation(libs.androidx.compose.ui)
-	implementation(libs.androidx.compose.ui.graphics)
-	implementation(libs.androidx.compose.ui.tooling.preview)
-	implementation(libs.androidx.core.ktx)
-	implementation(libs.androidx.lifecycle.runtime.ktx)
-	implementation(libs.androidx.lifecycle.viewmodel.compose)
-	
+
 	// CameraX
 	implementation(libs.androidx.camera.camera2)
 	implementation(libs.androidx.camera.lifecycle)
@@ -57,18 +82,5 @@ dependencies {
 	// ML Kit Text Recognition
 	implementation(libs.mlkit.text.recognition)
 	
-	// Location Services
-	implementation(libs.play.services.location)
-	
-	// Coroutines
-	implementation(libs.kotlinx.coroutines.android)
-	implementation(libs.kotlinx.coroutines.core)
-	
 	testImplementation(libs.junit)
-	androidTestImplementation(platform(libs.androidx.compose.bom))
-	androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-	androidTestImplementation(libs.androidx.espresso.core)
-	androidTestImplementation(libs.androidx.junit)
-	debugImplementation(libs.androidx.compose.ui.test.manifest)
-	debugImplementation(libs.androidx.compose.ui.tooling)
 }

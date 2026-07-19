@@ -1,16 +1,14 @@
 package cz.litoj.grs.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -27,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import cz.litoj.grs.CoordinateFormat
 import cz.litoj.grs.GpsSpoofViewModel
 import cz.litoj.grs.LocationMocker
@@ -36,32 +33,12 @@ import cz.litoj.grs.LocationMocker
 @Composable
 fun CoordinateInputSection(
     viewModel: GpsSpoofViewModel,
+    hasLocationPermission: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     var expanded by remember { mutableStateOf(false) }
-
-    var hasLocationPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.ACCESS_FINE_LOCATION,
-            ) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasLocationPermission = granted
-    }
-
-    // Auto-request location permission on first composition if not yet granted
-    LaunchedEffect(Unit) {
-        if (!hasLocationPermission) {
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-    }
 
     val locationMocker = remember { LocationMocker(context) }
     var isMocking by remember { mutableStateOf(false) }
@@ -85,12 +62,13 @@ fun CoordinateInputSection(
         val coords = uiState.currentCoordinates ?: return@LaunchedEffect
         if (!hasLocationPermission) return@LaunchedEffect
         if (!isMocking) {
-            val success = locationMocker.startMocking(coords.latitude, coords.longitude)
+            val success =
+                locationMocker.startMocking(coords.latitude, coords.longitude)
             if (success) {
                 isMocking = true
             } else {
                 viewModel.emitMockError(
-                    "Mock location not set up. Select this app as mock location app in Developer Options."
+                    "Mocking not active. Click to open Settings to choose this app for location mocking."
                 )
                 return@LaunchedEffect
             }
@@ -148,7 +126,7 @@ fun CoordinateInputSection(
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = it },
-            modifier = Modifier.width(130.dp),
+            modifier = Modifier.weight(1f),
         ) {
             OutlinedTextField(
                 value = uiState.selectedFormat.displayName,
@@ -160,7 +138,7 @@ fun CoordinateInputSection(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                 },
                 modifier = Modifier
-                    .menuAnchor()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     .fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
             )
