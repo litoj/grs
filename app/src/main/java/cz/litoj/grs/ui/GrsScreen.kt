@@ -26,7 +26,7 @@ import cz.litoj.grs.GpsSpoofViewModel
  * Camera scans continuously, coordinates auto-detect and auto-mock.
  */
 @Composable
-fun GpsSpoofScreen(
+fun GrsScreen(
     viewModel: GpsSpoofViewModel,
     cameraController: CameraController,
 ) {

@@ -12,7 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import cz.litoj.grs.ui.GpsSpoofScreen
+import cz.litoj.grs.ui.GrsScreen
 import cz.litoj.grs.ui.theme.GPSReadSpoofTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             GPSReadSpoofTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    GpsSpoofScreen(
+                    GrsScreen(
                         viewModel = viewModel,
                         cameraController = cameraController,
                     )
