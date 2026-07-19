@@ -1,9 +1,10 @@
 package cz.litoj.grs.ui
 
-import cz.litoj.grs.CameraController
+import cz.litoj.grs.CameraReaderService
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -28,7 +29,7 @@ import cz.litoj.grs.GpsSpoofViewModel
 @Composable
 fun GrsScreen(
     viewModel: GpsSpoofViewModel,
-    cameraController: CameraController,
+    cameraReaderService: CameraReaderService,
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -76,11 +77,14 @@ fun GrsScreen(
                 )
 
                 CameraPreviewSection(
-                    cameraController = cameraController,
+                    cameraReaderService = cameraReaderService,
                     lastRawText = uiState.lastRawText,
+                    pendingScan = uiState.pendingScan,
+                    onScanTriggered = { viewModel.setPendingScan(false) },
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .clipToBounds(),
                 )
             }
         }

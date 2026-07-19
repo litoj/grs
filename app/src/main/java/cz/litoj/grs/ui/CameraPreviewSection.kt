@@ -39,12 +39,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import cz.litoj.grs.CameraController
+import cz.litoj.grs.CameraReaderService
 
 @Composable
 fun CameraPreviewSection(
-    cameraController: CameraController,
+    cameraReaderService: CameraReaderService,
     lastRawText: String,
+    pendingScan: Boolean,
+    onScanTriggered: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -61,28 +63,36 @@ fun CameraPreviewSection(
     ) { granted ->
         hasCameraPermission = granted
         if (granted) {
-            cameraController.start()
+            cameraReaderService.start()
         }
     }
 
     // Auto-request camera permission on first composition if not yet granted
     LaunchedEffect(Unit) {
         if (hasCameraPermission) {
-            cameraController.start()
+            cameraReaderService.start()
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
-    val autoScan by cameraController.autoScan.collectAsState()
-    val isScanning by cameraController.scanState.collectAsState()
+    // Trigger a burst scan when the shortcut was used (and camera is ready)
+    LaunchedEffect(pendingScan, hasCameraPermission) {
+        if (pendingScan && hasCameraPermission) {
+            cameraReaderService.startScanning()
+            onScanTriggered()
+        }
+    }
+
+    val autoScan by cameraReaderService.autoScan.collectAsState()
+    val isScanning by cameraReaderService.scanState.collectAsState()
 
     Box(
         modifier = modifier.background(Color.Black),
     ) {
         if (hasCameraPermission) {
             AndroidView(
-                factory = { cameraController.previewView },
+                factory = { cameraReaderService.previewView },
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -122,7 +132,7 @@ fun CameraPreviewSection(
                 )
                 Switch(
                     checked = autoScan,
-                    onCheckedChange = { cameraController.toggleAutoScan() },
+                    onCheckedChange = { cameraReaderService.toggleAutoScan() },
                 )
             }
 
@@ -130,8 +140,8 @@ fun CameraPreviewSection(
             if (!autoScan) {
                 ExtendedFloatingActionButton(
                     onClick = {
-                        if (isScanning) cameraController.stopScanning()
-                        else cameraController.startScanning()
+                        if (isScanning) cameraReaderService.stopScanning()
+                        else cameraReaderService.startScanning()
                     },
                     icon = {
                         Icon(

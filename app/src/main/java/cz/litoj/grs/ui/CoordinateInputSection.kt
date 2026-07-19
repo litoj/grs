@@ -1,27 +1,18 @@
 package cz.litoj.grs.ui
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -110,105 +101,62 @@ fun CoordinateInputSection(
     }
 
     Row(
-        modifier = modifier.height(IntrinsicSize.Min),
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Column(
-            modifier = Modifier.weight(2f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        OutlinedTextField(
+            value = uiState.latitudeText,
+            onValueChange = viewModel::updateLatitudeText,
+            label = { Text("Lat (N/S)") },
+            singleLine = true,
+            enabled = hasLocationPermission,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+        )
+
+        OutlinedTextField(
+            value = uiState.longitudeText,
+            onValueChange = viewModel::updateLongitudeText,
+            label = { Text("Lon (E/W)") },
+            singleLine = true,
+            enabled = hasLocationPermission,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+        )
+
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+            modifier = Modifier.width(130.dp),
         ) {
             OutlinedTextField(
-                value = uiState.latitudeText,
-                onValueChange = viewModel::updateLatitudeText,
-                label = { Text("Latitude (N/S)") },
-                singleLine = true,
+                value = uiState.selectedFormat.displayName,
+                onValueChange = {},
+                label = { Text("Format") },
+                readOnly = true,
                 enabled = hasLocationPermission,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-            )
-            OutlinedTextField(
-                value = uiState.longitudeText,
-                onValueChange = viewModel::updateLongitudeText,
-                label = { Text("Longitude (E/W)") },
-                singleLine = true,
-                enabled = hasLocationPermission,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = it },
-            ) {
-                OutlinedTextField(
-                    value = uiState.selectedFormat.displayName,
-                    onValueChange = {},
-                    label = { Text("Format") },
-                    readOnly = true,
-                    enabled = hasLocationPermission,
-                    trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                    },
-                    modifier = Modifier
-                        .menuAnchor()
-                        .width(120.dp),
-                    shape = RoundedCornerShape(8.dp),
-                )
-
-                androidx.compose.material3.DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                ) {
-                    CoordinateFormat.entries.forEach { format ->
-                        DropdownMenuItem(
-                            text = { Text(format.displayName) },
-                            onClick = {
-                                viewModel.setCoordinateFormat(format)
-                                expanded = false
-                            },
-                        )
-                    }
-                }
-            }
-
-            Box(
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(top = 4.dp),
-                contentAlignment = Alignment.Center,
+                    .menuAnchor()
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+            )
+
+            androidx.compose.material3.DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
             ) {
-                OutlinedButton(
-                    onClick = {
-                        val coords =
-                            "${uiState.latitudeText}, ${uiState.longitudeText}"
-                        val clipboard =
-                            context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(
-                            android.content.ClipData.newPlainText(
-                                "Coordinates",
-                                coords
-                            )
-                        )
-                        Toast.makeText(
-                            context,
-                            "Copied: $coords",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    },
-                    enabled = hasLocationPermission,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Copy")
+                CoordinateFormat.entries.forEach { format ->
+                    DropdownMenuItem(
+                        text = { Text(format.displayName) },
+                        onClick = {
+                            viewModel.setCoordinateFormat(format)
+                            expanded = false
+                        },
+                    )
                 }
             }
         }

@@ -17,6 +17,7 @@ data class UiState(
     val latitudeText: String = "",
     val longitudeText: String = "",
     val lastRawText: String = "",
+    val pendingScan: Boolean = false,
 )
 
 /**
@@ -51,6 +52,14 @@ class GpsSpoofViewModel : ViewModel() {
     }
 
     /**
+     * Set the pending-scan flag. Set by [MainActivity] when the "Scan & Mock" shortcut
+     * is used; observed by [cz.litoj.grs.ui.CameraPreviewSection] to trigger a burst scan.
+     */
+    fun setPendingScan(value: Boolean) {
+        _uiState.update { it.copy(pendingScan = value) }
+    }
+
+    /**
      * Emit a mock error event to be shown to the user.
      */
     fun emitMockError(message: String) {
@@ -63,10 +72,10 @@ class GpsSpoofViewModel : ViewModel() {
      * @return true if valid coordinates were parsed from the text, false otherwise.
      */
     fun onTextRecognized(text: String): Boolean {
-        // Always store raw text so user can see what OCR detected
-        _uiState.update { it.copy(lastRawText = text) }
+        val normalized = GpsCoordinateParser.normalizeOcrText(text)
+        _uiState.update { it.copy(lastRawText = normalized) }
 
-        if (text.isBlank()) {
+        if (normalized.isBlank()) {
             return false
         }
 

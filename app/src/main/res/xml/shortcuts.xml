@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="scan_and_mock"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/shortcut_scan_and_mock_short"
+        android:shortcutLongLabel="@string/shortcut_scan_and_mock_long">
+        <intent
+            android:action="cz.litoj.grs.ACTION_SCAN_AND_MOCK"
+            android:targetPackage="cz.litoj.grs"
+            android:targetClass="cz.litoj.grs.MainActivity" />
+    </shortcut>
+</shortcuts>

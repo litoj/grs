@@ -18,7 +18,7 @@ import cz.litoj.grs.ui.theme.GPSReadSpoofTheme
 class MainActivity : ComponentActivity() {
 
     private lateinit var viewModel: GpsSpoofViewModel
-    private lateinit var cameraController: CameraController
+    private lateinit var cameraReaderService: CameraReaderService
     private var snackbarHostState: SnackbarHostState by mutableStateOf(
         SnackbarHostState()
     )
@@ -30,18 +30,20 @@ class MainActivity : ComponentActivity() {
         viewModel = GpsSpoofViewModel()
         snackbarHostState = SnackbarHostState()
 
-        cameraController = CameraController(
+        cameraReaderService = CameraReaderService(
             context = this,
             lifecycleOwner = this,
             onTextRecognized = viewModel::onTextRecognized,
         )
+
+        handleIntent(intent)
 
         setContent {
             GPSReadSpoofTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
                     GrsScreen(
                         viewModel = viewModel,
-                        cameraController = cameraController,
+                        cameraReaderService = cameraReaderService,
                     )
                     SnackbarHost(
                         modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
@@ -52,8 +54,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: android.content.Intent?) {
+        if (intent?.action == ACTION_SCAN_AND_MOCK) {
+            viewModel.setPendingScan(true)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        cameraController.stop()
+        cameraReaderService.stop()
+    }
+
+    companion object {
+        const val ACTION_SCAN_AND_MOCK = "cz.litoj.grs.ACTION_SCAN_AND_MOCK"
     }
 }

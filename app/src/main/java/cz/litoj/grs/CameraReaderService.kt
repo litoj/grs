@@ -23,7 +23,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-private const val TAG = "CameraController"
+private const val TAG = "CameraReaderService"
 
 private const val SCAN_INTERVAL_FAST_MS = 250L
 private const val SCAN_INTERVAL_SLOW_MS = 1500L
@@ -43,7 +43,7 @@ private const val KEY_AUTO_SCAN = "auto_scan"
  *
  * The mode is controlled by [autoScan] and persisted across app restarts.
  */
-class CameraController(
+class CameraReaderService(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner,
     private val onTextRecognized: (String) -> Boolean,
@@ -121,9 +121,9 @@ class CameraController(
         val timeSinceLastScan = now - lastScanTime.get()
 
         val debounceMs = when {
+            _scanState.value -> SCAN_INTERVAL_MANUAL_MS
             _autoScan.value ->
                 if (hasCoords.get()) SCAN_INTERVAL_SLOW_MS else SCAN_INTERVAL_FAST_MS
-            _scanState.value -> SCAN_INTERVAL_MANUAL_MS
             else -> {
                 // Manual mode and not actively scanning — skip
                 imageProxy.close()
@@ -151,8 +151,8 @@ class CameraController(
                 if (!recognizedText.isNullOrBlank()) {
                     val found = onTextRecognized(recognizedText)
                     hasCoords.set(found)
-                    // In manual mode, stop scanning once coordinates are found
-                    if (found && !_autoScan.value) {
+                    // Stop burst scan once coordinates are found
+                    if (found && _scanState.value) {
                         _scanState.value = false
                     }
                 } else {
@@ -184,16 +184,12 @@ class CameraController(
     fun toggleAutoScan() = setAutoScan(!_autoScan.value)
 
     /**
-     * Start a manual scan. Only effective in manual mode.
+     * Start a burst scan. Works in both automatic and manual modes.
      * Scans every ~100ms until valid coordinates are found, then stops automatically.
      */
     fun startScanning() {
-        if (_autoScan.value) {
-            Log.d(TAG, "startScanning ignored — automatic mode is active")
-            return
-        }
         _scanState.value = true
-        Log.d(TAG, "Manual scan started")
+        Log.d(TAG, "Burst scan started")
     }
 
     /**

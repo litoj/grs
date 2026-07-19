@@ -82,7 +82,7 @@ object GpsCoordinateParser {
     /**
      * Fix common OCR errors in coordinate text.
      */
-    private fun normalizeOcrText(text: String): String {
+    fun normalizeOcrText(text: String): String {
         var result = text
 
         // Fix common OCR confusions

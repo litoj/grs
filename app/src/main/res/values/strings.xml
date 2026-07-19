@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">GPS Read&amp;Spoof</string>
+    <string name="shortcut_scan_and_mock_short">Scan &amp; Mock</string>
+    <string name="shortcut_scan_and_mock_long">Scan &amp; Mock Location</string>
 </resources>
