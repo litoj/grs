@@ -1,4 +1,5 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
@@ -7,9 +8,52 @@
     <!-- Camera body with lens cutout (evenOdd creates transparent lens hole) -->
     <!-- Based on Material Design photo_camera icon, scaled to 108 viewport -->
     <path
-        android:fillColor="#FFFFFF"
         android:fillType="evenOdd"
-        android:pathData="M46.5,29L41.9,34L34,34c-2.75,0 -5,2.25 -5,5v30c0,2.75 2.25,5 5,5h40c2.75,0 5,-2.25 5,-5L79,39c0,-2.75 -2.25,-5 -5,-5h-7.9L61.5,29L46.5,29z M54,66.5c-6.9,0 -12.5,-5.6 -12.5,-12.5s5.6,-12.5 12.5,-12.5 12.5,5.6 12.5,12.5 -5.6,12.5 -12.5,12.5z" />
+        android:pathData="M46.5,29L41.9,34L34,34c-2.75,0 -5,2.25 -5,5v30c0,2.75 2.25,5 5,5h40c2.75,0 5,-2.25 5,-5L79,39c0,-2.75 -2.25,-5 -5,-5h-7.9L61.5,29L46.5,29z M54,66.5c-6.9,0 -12.5,-5.6 -12.5,-12.5s5.6,-12.5 12.5,-12.5 12.5,5.6 12.5,12.5 -5.6,12.5 -12.5,12.5z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="25"
+                android:centerY="10"
+                android:gradientRadius="110">
+                <item
+                    android:color="#FF000000"
+                    android:offset="0.1" />
+                <item
+                    android:color="#FF242A33"
+                    android:offset="0.4" />
+                <item
+                    android:color="#FF7784A3"
+                    android:offset="0.58" />
+                <item
+                    android:color="#FF101820"
+                    android:offset="0.72" />
+                <item
+                    android:color="#FF000000"
+                    android:offset="0.95" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Green circle filling the lens area (behind the location pin) -->
+    <path
+        android:pathData="M54,66.5c-6.9,0 -12.5,-5.6 -12.5,-12.5s5.6,-12.5 12.5,-12.5 12.5,5.6 12.5,12.5 -5.6,12.5 -12.5,12.5z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="41.5"
+                android:startY="54"
+                android:endX="66.5"
+                android:endY="66.5"
+                android:type="linear">
+                <item
+                    android:color="#FF4A9900"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF2D6600"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
 
     <!-- Location pin replacing the lens (evenOdd creates inner circle hole) -->
     <!-- Based on Material Design place icon, positioned in lens area -->

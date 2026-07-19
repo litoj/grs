@@ -7,17 +7,25 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +74,9 @@ fun CameraPreviewSection(
         }
     }
 
+    val autoScan by cameraController.autoScan.collectAsState()
+    val isScanning by cameraController.scanState.collectAsState()
+
     Box(
         modifier = modifier.background(Color.Black),
     ) {
@@ -88,6 +99,52 @@ fun CameraPreviewSection(
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+
+            // Auto/Manual scan toggle (top-right)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .background(
+                        Color.Black.copy(alpha = 0.5f),
+                        RoundedCornerShape(16.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "Continuous scan",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                )
+                Switch(
+                    checked = autoScan,
+                    onCheckedChange = { cameraController.toggleAutoScan() },
+                )
+            }
+
+            // Scan Now floating button (bottom center, manual mode only)
+            if (!autoScan) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        if (isScanning) cameraController.stopScanning()
+                        else cameraController.startScanning()
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.DocumentScanner,
+                            contentDescription = "Scan",
+                        )
+                    },
+                    text = {
+                        Text(if (isScanning) "Scanning\u2026" else "Scan Now")
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp),
                 )
             }
         } else {
