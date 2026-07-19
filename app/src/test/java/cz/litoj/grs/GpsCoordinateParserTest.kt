@@ -133,6 +133,20 @@ class GpsCoordinateParserTest {
         assertNull(result)
     }
 
+    @Test
+    fun `mixed formats - DM latitude, DMS longitude - should return null`() {
+        val result = GpsCoordinateParser.parseFromText("N 50°10.050 E 14°29'15\"")
+        assertNull(result)
+    }
+
+    @Test
+    fun `DM latitude, DM+number longitude - should work`() {
+        val result = GpsCoordinateParser.parseFromText("N 50°30', E 14°30'23.12")
+        assertNotNull(result)
+        assertEquals(50.5, result!!.latitude, 0.0001)
+        assertEquals(14.5, result.longitude, 0.0001)
+    }
+
     // --- Comma-separated format tests ---
 
     @Test

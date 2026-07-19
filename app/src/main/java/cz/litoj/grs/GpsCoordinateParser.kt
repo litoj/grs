@@ -91,8 +91,9 @@ object GpsCoordinateParser {
         result = result.replace(Regex("[l|!iI]"), "1")
         result = result.replace("Z", "2")
         result = result.replace("t", "4")
-        // S/h → 5 when in number context (but preserve S as direction at end of coordinate)
-        result = result.replace(Regex("""(?<=[\d.])[Sh](?=\d)"""), "5")
+        // S → 5 when in number context (but preserve S as direction at end of coordinate)
+        result = result.replace(Regex("""(?<=[\d.])S(?=\d)"""), "5")
+        result = result.replace("h", "5")
         result = result.replace("B", "8")
         result = result.replace("g", "9")
 

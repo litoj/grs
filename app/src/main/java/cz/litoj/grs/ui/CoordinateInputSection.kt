@@ -66,6 +66,20 @@ fun CoordinateInputSection(
     val locationMocker = remember { LocationMocker(context) }
     var isMocking by remember { mutableStateOf(false) }
 
+    // Display text derived from coordinates + selected format.
+    // Local state allows free typing; re-syncs when coordinates change (e.g. from OCR).
+    val coords = uiState.currentCoordinates
+    val displayFormat =
+        if (uiState.selectedFormat == CoordinateFormat.AUTO) coords?.format
+            ?: CoordinateFormat.DEGREES else uiState.selectedFormat
+
+    var latText by remember(coords?.latitude, displayFormat) {
+        mutableStateOf(coords?.latitudeString(displayFormat) ?: "")
+    }
+    var lonText by remember(coords?.longitude, displayFormat) {
+        mutableStateOf(coords?.longitudeString(displayFormat) ?: "")
+    }
+
     // Start mocking once, then update on every coordinate change
     LaunchedEffect(uiState.currentCoordinates, hasLocationPermission) {
         val coords = uiState.currentCoordinates ?: return@LaunchedEffect
@@ -106,8 +120,11 @@ fun CoordinateInputSection(
         verticalAlignment = Alignment.Top,
     ) {
         OutlinedTextField(
-            value = uiState.latitudeText,
-            onValueChange = viewModel::updateLatitudeText,
+            value = latText,
+            onValueChange = {
+                latText = it
+                viewModel.updateLatitude(it)
+            },
             label = { Text("Lat (N/S)") },
             singleLine = true,
             enabled = hasLocationPermission,
@@ -116,8 +133,11 @@ fun CoordinateInputSection(
         )
 
         OutlinedTextField(
-            value = uiState.longitudeText,
-            onValueChange = viewModel::updateLongitudeText,
+            value = lonText,
+            onValueChange = {
+                lonText = it
+                viewModel.updateLongitude(it)
+            },
             label = { Text("Lon (E/W)") },
             singleLine = true,
             enabled = hasLocationPermission,

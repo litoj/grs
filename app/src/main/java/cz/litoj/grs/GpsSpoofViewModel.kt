@@ -14,8 +14,6 @@ import kotlinx.coroutines.flow.update
 data class UiState(
     val currentCoordinates: GpsCoordinates? = null,
     val selectedFormat: CoordinateFormat = CoordinateFormat.AUTO,
-    val latitudeText: String = "",
-    val longitudeText: String = "",
     val lastRawText: String = "",
     val pendingScan: Boolean = false,
 )
@@ -96,21 +94,11 @@ class GpsSpoofViewModel : ViewModel() {
     }
 
     /**
-     * Apply coordinates as the new current value and update the text fields.
+     * Apply coordinates as the new current value.
      * Called from OCR parsing or when the user accepts pending coordinates.
      */
     fun applyCoordinates(coords: GpsCoordinates) {
-        val selected = _uiState.value.selectedFormat
-        val displayFormat =
-            if (selected == CoordinateFormat.AUTO) coords.format else selected
-
-        _uiState.update {
-            it.copy(
-                currentCoordinates = coords,
-                latitudeText = coords.latitudeString(displayFormat),
-                longitudeText = coords.longitudeString(displayFormat),
-            )
-        }
+        _uiState.update { it.copy(currentCoordinates = coords) }
     }
 
     /**
@@ -126,69 +114,53 @@ class GpsSpoofViewModel : ViewModel() {
     }
 
     /**
-     * Update latitude text from manual editing. Parses the value and updates coordinates.
+     * Update latitude from manual editing. Parses the value and updates coordinates.
      */
-    fun updateLatitudeText(text: String) {
+    fun updateLatitude(text: String) {
         val coords = _uiState.value.currentCoordinates
         val selected = _uiState.value.selectedFormat
         val displayFormat =
             if (selected == CoordinateFormat.AUTO) coords?.format
                 ?: CoordinateFormat.DEGREES else selected
-
-        _uiState.update { it.copy(latitudeText = text) }
 
         val parsedLat = GpsCoordinateParser.parseLatitude(text, displayFormat)
         if (parsedLat != null) {
-            val newCoords = GpsCoordinates(
-                parsedLat,
-                coords?.longitude ?: 0.0,
-                coords?.format ?: CoordinateFormat.DEGREES
-            )
-            _uiState.update { it.copy(currentCoordinates = newCoords) }
+            _uiState.update {
+                it.copy(currentCoordinates = GpsCoordinates(
+                    parsedLat,
+                    coords?.longitude ?: 0.0,
+                    coords?.format ?: CoordinateFormat.DEGREES
+                ))
+            }
         }
     }
 
     /**
-     * Update longitude text from manual editing. Parses the value and updates coordinates.
+     * Update longitude from manual editing. Parses the value and updates coordinates.
      */
-    fun updateLongitudeText(text: String) {
+    fun updateLongitude(text: String) {
         val coords = _uiState.value.currentCoordinates
         val selected = _uiState.value.selectedFormat
         val displayFormat =
             if (selected == CoordinateFormat.AUTO) coords?.format
                 ?: CoordinateFormat.DEGREES else selected
 
-        _uiState.update { it.copy(longitudeText = text) }
-
         val parsedLon = GpsCoordinateParser.parseLongitude(text, displayFormat)
         if (parsedLon != null) {
-            val newCoords = GpsCoordinates(
-                coords?.latitude ?: 0.0,
-                parsedLon,
-                coords?.format ?: CoordinateFormat.DEGREES
-            )
-            _uiState.update { it.copy(currentCoordinates = newCoords) }
+            _uiState.update {
+                it.copy(currentCoordinates = GpsCoordinates(
+                    coords?.latitude ?: 0.0,
+                    parsedLon,
+                    coords?.format ?: CoordinateFormat.DEGREES
+                ))
+            }
         }
     }
 
     /**
-     * Update coordinate format selection and reformat the text fields
+     * Update coordinate format selection.
      */
     fun setCoordinateFormat(format: CoordinateFormat) {
-        val coords = _uiState.value.currentCoordinates ?: run {
-            _uiState.update { it.copy(selectedFormat = format) }
-            return
-        }
-
-        val displayFormat =
-            if (format == CoordinateFormat.AUTO) coords.format else format
-
-        _uiState.update {
-            it.copy(
-                selectedFormat = format,
-                latitudeText = coords.latitudeString(displayFormat),
-                longitudeText = coords.longitudeString(displayFormat),
-            )
-        }
+        _uiState.update { it.copy(selectedFormat = format) }
     }
 }
