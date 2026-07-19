@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DocumentScanner
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import cz.litoj.grs.CameraReaderService
+import cz.litoj.grs.CropParams
 
 @Composable
 fun CameraPreviewSection(
@@ -86,9 +89,22 @@ fun CameraPreviewSection(
 
     val autoScan by cameraReaderService.autoScan.collectAsState()
     val isScanning by cameraReaderService.scanState.collectAsState()
+    val density = LocalDensity.current
 
+    // Measure the preview area and update the OCR crop region to match the scan-box overlay
     Box(
-        modifier = modifier.background(Color.Black),
+        modifier = modifier
+            .background(Color.Black)
+            .onGloballyPositioned { coords ->
+                val w = coords.size.width
+                if (w > 0) {
+                    cameraReaderService.cropParams = CropParams(
+                        screenWidthPx = w,
+                        overlayWidthPx = (w * 0.85f).toInt(),
+                        overlayHeightPx = with(density) { 120.dp.toPx() }.toInt(),
+                    )
+                }
+            },
     ) {
         if (hasCameraPermission) {
             AndroidView(

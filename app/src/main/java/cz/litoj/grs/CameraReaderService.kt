@@ -1,6 +1,7 @@
 package cz.litoj.grs
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
@@ -12,6 +13,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.LifecycleOwner
+import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +33,17 @@ private const val SCAN_INTERVAL_MANUAL_MS = 100L
 
 private const val PREFS_NAME = "grs_settings"
 private const val KEY_AUTO_SCAN = "auto_scan"
+
+/**
+ * Screen width and scan-box overlay dimensions in pixels.
+ * The screen width is the constraining dimension in FILL_CENTER, so the
+ * view height isn't needed to calculate the crop.
+ */
+data class CropParams(
+    val screenWidthPx: Int,
+    val overlayWidthPx: Int,
+    val overlayHeightPx: Int,
+)
 
 /**
  * Manages CameraX preview + image analysis with text recognition.
@@ -57,10 +70,16 @@ class CameraReaderService(
     private val lastScanTime = AtomicLong(0L)
     private val hasCoords = AtomicBoolean(false)
 
-    private val sharedPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    /** Dimensions of the preview area + scan-box overlay, for exact OCR crop. */
+    @Volatile
+    var cropParams: CropParams = CropParams(1, 1, 1)
+
+    private val sharedPrefs =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /** Whether automatic (continuous) scanning is enabled. Persisted across restarts. */
-    private val _autoScan = MutableStateFlow(sharedPrefs.getBoolean(KEY_AUTO_SCAN, true))
+    private val _autoScan =
+        MutableStateFlow(sharedPrefs.getBoolean(KEY_AUTO_SCAN, true))
     val autoScan: StateFlow<Boolean> = _autoScan.asStateFlow()
 
     /** Whether a manual scan is actively running. Only meaningful when [autoScan] is false. */
@@ -124,6 +143,7 @@ class CameraReaderService(
             _scanState.value -> SCAN_INTERVAL_MANUAL_MS
             _autoScan.value ->
                 if (hasCoords.get()) SCAN_INTERVAL_SLOW_MS else SCAN_INTERVAL_FAST_MS
+
             else -> {
                 // Manual mode and not actively scanning — skip
                 imageProxy.close()
@@ -146,7 +166,8 @@ class CameraReaderService(
 
         scope.launch {
             try {
-                val recognizedText = textRecognizer.recognizeText(imageProxy)
+                val inputImage = imageProxy.toCroppedInputImage()
+                val recognizedText = textRecognizer.recognizeText(inputImage)
                 Log.d(TAG, "OCR result: '${recognizedText?.take(200)}'")
                 if (!recognizedText.isNullOrBlank()) {
                     val found = onTextRecognized(recognizedText)
@@ -161,6 +182,7 @@ class CameraReaderService(
             } catch (e: Exception) {
                 Log.e(TAG, "Frame processing error", e)
             } finally {
+                imageProxy.close()
                 isProcessing.set(false)
             }
         }
@@ -198,6 +220,42 @@ class CameraReaderService(
     fun stopScanning() {
         _scanState.value = false
         Log.d(TAG, "Manual scan stopped")
+    }
+
+    /**
+     * Convert an [ImageProxy] to a cropped [InputImage] matching the scan-box overlay.
+     * The overlay is centered, so the crop is centered on the bitmap.
+     * Accounts for FILL_CENTER scaling and 90°/270° rotation.
+     */
+    @androidx.annotation.OptIn(ExperimentalGetImage::class)
+    private fun ImageProxy.toCroppedInputImage(): InputImage {
+        val bitmap = this.toBitmap()
+        val rotationDegrees = this.imageInfo.rotationDegrees
+        val p = cropParams
+
+        val (cropW, cropH) = if (rotationDegrees == 90 || rotationDegrees == 270) {
+            // Rotated bitmap: W_b × H_b → display as H_b × W_b
+            // Screen width constrains in FILL_CENTER → scale = screenWidth / bitmap.height
+            val scale = p.screenWidthPx.toFloat() / bitmap.height
+            // View height → sensor width; View width → sensor height
+            (p.overlayHeightPx / scale).toInt() to (p.overlayWidthPx / scale).toInt()
+        } else {
+            val scale = p.screenWidthPx.toFloat() / bitmap.width
+            (p.overlayWidthPx / scale).toInt() to (p.overlayHeightPx / scale).toInt()
+        }
+
+        val left = ((bitmap.width - cropW) / 2).coerceAtLeast(0)
+        val top = ((bitmap.height - cropH) / 2).coerceAtLeast(0)
+        val w = cropW.coerceAtMost(bitmap.width - left)
+        val h = cropH.coerceAtMost(bitmap.height - top)
+
+        Log.d(
+            TAG,
+            "Cropping to: left=$left top=$top w=$w h=$h (from ${bitmap.width}x${bitmap.height})"
+        )
+
+        val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, w, h)
+        return InputImage.fromBitmap(croppedBitmap, rotationDegrees)
     }
 
     /**
