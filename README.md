@@ -37,7 +37,7 @@ The parser handles all combinations of direction-letter position (prefix/suffix)
 
 ## Requirements
 
-- **Android 6.0 (API 23) or higher**
+- **Android 8 (API 26) or higher**
 - Camera access
 - Location access
 - The app must be set as the **Mock location app** in Developer Options
