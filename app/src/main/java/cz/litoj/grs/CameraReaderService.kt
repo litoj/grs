@@ -101,13 +101,6 @@ class CameraReaderService(
 
     /**
      * Bind CameraX preview + image analysis to the lifecycle.
-     *
-     * ISP postprocessing is disabled via [Camera2Interop] for minimal pipeline
-     * latency: edge enhancement, noise reduction, hot pixel correction, lens
-     * shading, and chromatic aberration correction are all turned off.
-     *
-     * Focus is locked to a fixed distance between the lens's closest focus and
-     * 1 meter, ideal for scanning nearby text without autofocus hunting.
      */
     @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
     fun start() {
