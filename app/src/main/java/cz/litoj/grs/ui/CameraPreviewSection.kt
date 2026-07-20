@@ -70,9 +70,11 @@ fun CameraPreviewSection(
             .background(Color.Black)
             .onGloballyPositioned { coords ->
                 val w = coords.size.width
-                if (w > 0) {
+                val h = coords.size.height
+                if (w > 0 && h > 0) {
                     cameraReaderService.cropParams = CropParams(
                         screenWidthPx = w,
+                        previewHeightPx = h,
                         overlayWidthPx = (w * 0.85f).toInt(),
                         overlayHeightPx = with(density) { 120.dp.toPx() }.toInt(),
                     )

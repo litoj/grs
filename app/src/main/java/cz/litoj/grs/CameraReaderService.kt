@@ -2,12 +2,18 @@ package cz.litoj.grs
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.hardware.camera2.CaptureRequest
 import android.util.Log
+import android.util.Size
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
@@ -35,12 +41,13 @@ private const val PREFS_NAME = "grs_settings"
 private const val KEY_AUTO_SCAN = "auto_scan"
 
 /**
- * Screen width and scan-box overlay dimensions in pixels.
- * The screen width is the constraining dimension in FILL_CENTER, so the
- * view height isn't needed to calculate the crop.
+ * Preview area dimensions and scan-box overlay size in pixels.
+ * Both width and height are needed because FILL_CENTER (CENTER_CROP) scales
+ * by the larger of the two dimension ratios, so either can be constraining.
  */
 data class CropParams(
     val screenWidthPx: Int,
+    val previewHeightPx: Int,
     val overlayWidthPx: Int,
     val overlayHeightPx: Int,
 )
@@ -72,7 +79,7 @@ class CameraReaderService(
 
     /** Dimensions of the preview area + scan-box overlay, for exact OCR crop. */
     @Volatile
-    var cropParams: CropParams = CropParams(1, 1, 1)
+    var cropParams: CropParams = CropParams(1, 1, 1, 1)
 
     private val sharedPrefs =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -88,32 +95,98 @@ class CameraReaderService(
 
     /** Preview view for the camera — created once, rendered by the composable. */
     val previewView: PreviewView = PreviewView(context).apply {
-        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
         scaleType = PreviewView.ScaleType.FILL_CENTER
     }
 
     /**
      * Bind CameraX preview + image analysis to the lifecycle.
+     *
+     * ISP postprocessing is disabled via [Camera2Interop] for minimal pipeline
+     * latency: edge enhancement, noise reduction, hot pixel correction, lens
+     * shading, and chromatic aberration correction are all turned off.
+     *
+     * Focus is locked to a fixed distance between the lens's closest focus and
+     * 1 meter, ideal for scanning nearby text without autofocus hunting.
      */
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
     fun start() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
             try {
-                val cameraProvider = cameraProviderFuture.get()
+                // Target a resolution matched to the device screen width to avoid
+                // unnecessary overhead. The back camera sensor is landscape, so
+                // screen width (portrait) maps to sensor height. Using 4:3 aspect
+                // ratio (sensor native for most back cameras).
+                val screenWidth = context.resources.displayMetrics.widthPixels
+                val screenResolution = ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(screenWidth * 4 / 3, screenWidth * 4 / 3),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                        )
+                    )
+                    .build()
 
-                val preview = Preview.Builder().build().also {
+                val previewBuilder = Preview.Builder()
+                    .setResolutionSelector(screenResolution)
+                val previewExtender = Camera2Interop.Extender(previewBuilder)
+                    .setCaptureRequestOption(
+                        CaptureRequest.EDGE_MODE,
+                        CaptureRequest.EDGE_MODE_OFF
+                    )
+                    .setCaptureRequestOption(
+                        CaptureRequest.NOISE_REDUCTION_MODE,
+                        CaptureRequest.NOISE_REDUCTION_MODE_OFF
+                    )
+                    .setCaptureRequestOption(
+                        CaptureRequest.HOT_PIXEL_MODE,
+                        CaptureRequest.HOT_PIXEL_MODE_OFF
+                    )
+                    .setCaptureRequestOption(
+                        CaptureRequest.SHADING_MODE,
+                        CaptureRequest.SHADING_MODE_OFF
+                    )
+                    .setCaptureRequestOption(
+                        CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE,
+                        CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_OFF
+                    )
+
+                val preview = previewBuilder.build().also {
                     it.surfaceProvider = previewView.surfaceProvider
                 }
 
-                val imageAnalyzer = ImageAnalysis.Builder()
+                val analyzerBuilder = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { analyzer ->
-                        analyzer.setAnalyzer(cameraExecutor) { imageProxy ->
-                            processFrame(imageProxy)
-                        }
+                    .setResolutionSelector(screenResolution)
+                Camera2Interop.Extender(analyzerBuilder)
+                    .setCaptureRequestOption(
+                        CaptureRequest.EDGE_MODE,
+                        CaptureRequest.EDGE_MODE_OFF
+                    )
+                    .setCaptureRequestOption(
+                        CaptureRequest.NOISE_REDUCTION_MODE,
+                        CaptureRequest.NOISE_REDUCTION_MODE_OFF
+                    )
+                    .setCaptureRequestOption(
+                        CaptureRequest.HOT_PIXEL_MODE,
+                        CaptureRequest.HOT_PIXEL_MODE_OFF
+                    )
+                    .setCaptureRequestOption(
+                        CaptureRequest.SHADING_MODE,
+                        CaptureRequest.SHADING_MODE_OFF
+                    )
+                    .setCaptureRequestOption(
+                        CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE,
+                        CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_OFF
+                    )
+                val imageAnalyzer = analyzerBuilder.build().also { analyzer ->
+                    analyzer.setAnalyzer(cameraExecutor) { imageProxy ->
+                        processFrame(imageProxy)
                     }
+                }
 
+                val cameraProvider = cameraProviderFuture.get()
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(
                     lifecycleOwner,
@@ -121,7 +194,6 @@ class CameraReaderService(
                     preview,
                     imageAnalyzer,
                 )
-                Log.d(TAG, "Camera bound successfully")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to bind camera", e)
             }
@@ -162,13 +234,12 @@ class CameraReaderService(
         }
 
         lastScanTime.set(now)
-        Log.d(TAG, "Processing frame")
+        Log.d(TAG, "Processing frame ${imageProxy.width}x${imageProxy.height}")
 
         scope.launch {
             try {
                 val inputImage = imageProxy.toCroppedInputImage()
                 val recognizedText = textRecognizer.recognizeText(inputImage)
-                Log.d(TAG, "OCR result: '${recognizedText?.take(200)}'")
                 if (!recognizedText.isNullOrBlank()) {
                     val found = onTextRecognized(recognizedText)
                     hasCoords.set(found)
@@ -199,7 +270,6 @@ class CameraReaderService(
             _scanState.value = false
             hasCoords.set(false)
         }
-        Log.d(TAG, "Auto scan set to $enabled")
     }
 
     /** Convenience method to toggle automatic scanning. */
@@ -211,7 +281,6 @@ class CameraReaderService(
      */
     fun startScanning() {
         _scanState.value = true
-        Log.d(TAG, "Burst scan started")
     }
 
     /**
@@ -219,7 +288,6 @@ class CameraReaderService(
      */
     fun stopScanning() {
         _scanState.value = false
-        Log.d(TAG, "Manual scan stopped")
     }
 
     /**
@@ -234,13 +302,19 @@ class CameraReaderService(
         val p = cropParams
 
         val (cropW, cropH) = if (rotationDegrees == 90 || rotationDegrees == 270) {
-            // Rotated bitmap: W_b × H_b → display as H_b × W_b
-            // Screen width constrains in FILL_CENTER → scale = screenWidth / bitmap.height
-            val scale = p.screenWidthPx.toFloat() / bitmap.height
-            // View height → sensor width; View width → sensor height
+            // Rotated bitmap: W_b × H_b → display as H_b × W_b (portrait)
+            // FILL_CENTER scales by max(width/rotatedW, height/rotatedH)
+            val scale = maxOf(
+                p.screenWidthPx.toFloat() / bitmap.height,
+                p.previewHeightPx.toFloat() / bitmap.width,
+            )
+            // Screen X → bitmap Y; Screen Y → bitmap X
             (p.overlayHeightPx / scale).toInt() to (p.overlayWidthPx / scale).toInt()
         } else {
-            val scale = p.screenWidthPx.toFloat() / bitmap.width
+            val scale = maxOf(
+                p.screenWidthPx.toFloat() / bitmap.width,
+                p.previewHeightPx.toFloat() / bitmap.height,
+            )
             (p.overlayWidthPx / scale).toInt() to (p.overlayHeightPx / scale).toInt()
         }
 
@@ -248,11 +322,6 @@ class CameraReaderService(
         val top = ((bitmap.height - cropH) / 2).coerceAtLeast(0)
         val w = cropW.coerceAtMost(bitmap.width - left)
         val h = cropH.coerceAtMost(bitmap.height - top)
-
-        Log.d(
-            TAG,
-            "Cropping to: left=$left top=$top w=$w h=$h (from ${bitmap.width}x${bitmap.height})"
-        )
 
         val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, w, h)
         return InputImage.fromBitmap(croppedBitmap, rotationDegrees)
