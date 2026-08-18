@@ -8,6 +8,7 @@ import android.util.Size
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
+import kotlinx.coroutines.cancel
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -77,7 +78,13 @@ class CameraReaderService(
     private val lastScanTime = AtomicLong(0L)
     private val hasCoords = AtomicBoolean(false)
 
-    /** Dimensions of the preview area + scan-box overlay, for exact OCR crop. */
+    /**
+     * Dimensions of the preview area + scan-box overlay, for exact OCR crop.
+     *
+     * Set from the Compose layout's `onGloballyPositioned` callback before the first
+     * camera frame is processed. The default `1×1` is a placeholder that is always
+     * overwritten before any frame reaches [processFrame].
+     */
     @Volatile
     var cropParams: CropParams = CropParams(1, 1, 1, 1)
 
@@ -123,7 +130,7 @@ class CameraReaderService(
 
                 val previewBuilder = Preview.Builder()
                     .setResolutionSelector(screenResolution)
-                val previewExtender = Camera2Interop.Extender(previewBuilder)
+                Camera2Interop.Extender(previewBuilder)
                     .setCaptureRequestOption(
                         CaptureRequest.EDGE_MODE,
                         CaptureRequest.EDGE_MODE_OFF
@@ -277,13 +284,6 @@ class CameraReaderService(
     }
 
     /**
-     * Stop an active manual scan.
-     */
-    fun stopScanning() {
-        _scanState.value = false
-    }
-
-    /**
      * Convert an [ImageProxy] to a cropped [InputImage] matching the scan-box overlay.
      * The overlay is centered, so the crop is centered on the bitmap.
      * Accounts for FILL_CENTER scaling and 90°/270° rotation.
@@ -321,9 +321,24 @@ class CameraReaderService(
     }
 
     /**
+     * Unbind the camera use cases without shutting down the service.
+     * Call this when you want to temporarily stop the camera but keep the service alive.
+     */
+    fun stopCamera() {
+        try {
+            val cameraProvider = ProcessCameraProvider.getInstance(context).get()
+            cameraProvider.unbindAll()
+            Log.d(TAG, "Camera unbound")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to unbind camera", e)
+        }
+    }
+
+    /**
      * Shut down the camera executor and release the text recognizer.
      */
     fun stop() {
+        scope.cancel()
         cameraExecutor.shutdown()
         textRecognizer.close()
     }

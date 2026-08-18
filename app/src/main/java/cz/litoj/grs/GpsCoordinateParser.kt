@@ -1,8 +1,5 @@
 package cz.litoj.grs
 
-import cz.litoj.grs.GpsCoordinateParser.parseCoordinateNumber
-
-
 /**
  * Represents GPS coordinates with latitude and longitude in decimal degrees,
  * along with the coordinate format they were originally detected in.
@@ -13,14 +10,13 @@ data class GpsCoordinates(
     val format: CoordinateFormat = CoordinateFormat.DEGREES,
 ) {
     fun latitudeString(format: CoordinateFormat): String =
-        formatCoordinate(latitude, isLatitude = true, format)
+        formatCoordinate(latitude, format)
 
     fun longitudeString(format: CoordinateFormat): String =
-        formatCoordinate(longitude, isLatitude = false, format)
+        formatCoordinate(longitude, format)
 
     private fun formatCoordinate(
         decimal: Double,
-        isLatitude: Boolean,
         format: CoordinateFormat
     ): String {
         return when (format) {
@@ -28,28 +24,21 @@ data class GpsCoordinates(
                 String.format(java.util.Locale.US, "%.6f", decimal)
 
             CoordinateFormat.DEGREES_MINUTES ->
-                convertDecimalToDegreesMinutes(decimal, isLatitude)
+                convertDecimalToDegreesMinutes(decimal)
 
             CoordinateFormat.DEGREES_MINUTES_SECONDS ->
-                convertDecimalToDms(decimal, isLatitude)
+                convertDecimalToDms(decimal)
         }
     }
 
-    private fun convertDecimalToDegreesMinutes(
-        decimal: Double,
-        isLatitude: Boolean
-    ): String {
+    private fun convertDecimalToDegreesMinutes(decimal: Double): String {
         val absolute = kotlin.math.abs(decimal)
         val degrees = absolute.toInt()
         val minutes = (absolute - degrees) * 60
-        return String.format(java.util.Locale.US, "%d°%.3f'", degrees, minutes)
+        return String.format(java.util.Locale.US, "%d°%.4f'", degrees, minutes)
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    private fun convertDecimalToDms(
-        decimal: Double,
-        isLatitude: Boolean
-    ): String {
+    private fun convertDecimalToDms(decimal: Double): String {
         val absolute = kotlin.math.abs(decimal)
         val degrees = absolute.toInt()
         val minutesFull = (absolute - degrees) * 60
@@ -65,11 +54,11 @@ data class GpsCoordinates(
     }
 }
 
-enum class CoordinateFormat(val displayName: String) {
-    AUTO("Auto"),
-    DEGREES("Deg"),
-    DEGREES_MINUTES("D° M'"),
-    DEGREES_MINUTES_SECONDS("Full"),
+enum class CoordinateFormat(@androidx.annotation.StringRes val displayNameRes: Int) {
+    AUTO(R.string.format_auto),
+    DEGREES(R.string.format_degrees),
+    DEGREES_MINUTES(R.string.format_degrees_minutes),
+    DEGREES_MINUTES_SECONDS(R.string.format_degrees_minutes_seconds),
 }
 
 /**
@@ -90,48 +79,39 @@ object GpsCoordinateParser {
         result = result.replace(Regex("[DoO]"), "0")
         result = result.replace(Regex("[l|!iI]"), "1")
         result = result.replace("Z", "2")
-        result = result.replace("t", "4")
-        // S → 5 when in number context (but preserve S as direction at end of coordinate)
+        // S is 5 only inside numbers (so it can't kill the direction letter)
         result = result.replace(Regex("""(?<=[\d.])S(?=\d)"""), "5")
-        result = result.replace("h", "5")
         result = result.replace("B", "8")
         result = result.replace("g", "9")
 
-        // Remove random spaces OCR inserted within coordinate numbers
-        // (e.g. "5 0. 1 2 3" → "50.123"), while preserving spaces between
-        // direction letters and numbers ("N 50.123" stays unchanged)
+        // Collapse spaces inside numbers (keep "N 50.123" untouched)
         result = result.replace(Regex("""(?<=[0-9.°'"])\s+(?=[0-9.°'"])"""), "")
 
         return result
     }
 
     /**
-     * Combined coordinate-number pattern matching all 3 formats:
-     * - Decimal:  50.123456
-     * - DM:       50°10.050, 50°10.050', 50°10'
-     * - DMS:      50°10'30.5", 50° 10' 30.5"
+     * One coordinate's number part: decimal (`50.123`), D°M' (`50°10.05'`), or D°M'S" (`50°10'30"`).
      *
-     * Spaces between DMS/DM components (°, ', ") are handled by `\s*`.
+     * Breakdown:
+     * - `\d{1,3}` — 1–3 digit degrees
+     * - `(?:\.\d+°?|…)` — either a decimal fraction (optionally followed by ° for decimal degrees like `50.123°`),
+     *   or a D°M'/D°M'S" continuation starting with `°`
      */
-    private val COORD_NUMBER =
+    private const val COORD_NUMBER =
         """\d{1,3}(?:\.\d+°?|°\d{1,2}(?:\.\d+)?'?(?:\d{1,2}(?:\.\d+)?")?)"""
 
     /**
-     * Master regex with 4 branches covering all combinations of
-     * side (suffix/prefix) × order (lat-first/lon-first).
+     * Finds lat+lon in any order/side layout; rejects same-type pairs.
      *
-     * Using [NS] and [EW] separately makes each branch self-validating:
-     * - Same-type pairs (N…N, E…E) fail at the regex level
-     * - Mixed positions (one suffix, one prefix) fail all 4 branches
+     * Four branches (each captures 4 groups: dir1, num1, dir2, num2):
+     * 1. Suffix, lat-lon:  `N 50.123 E 14.456`  → groups 1–4, latFirst = true
+     * 2. Suffix, lon-lat:  `E 14.456 N 50.123`  → groups 5–8, latFirst = false
+     * 3. Prefix, lat-lon:  `50.123 N 14.456 E`  → groups 9–12, latFirst = true
+     * 4. Prefix, lon-lat:  `14.456 E 50.123 N`  → groups 13–16, latFirst = false
      *
-     * `(?<![a-zA-Z])` / `(?![a-zA-Z])` ensure the coordinate pair
-     * isn't directly connected to other text.
-     *
-     * Groups per branch (4 each, 16 total):
-     * - Branch 1 (suffix, lat-lon):  1=dir₁  2=num₁  3=dir₂  4=num₂
-     * - Branch 2 (suffix, lon-lat):  5=dir₁  6=num₁  7=dir₂  8=num₂
-     * - Branch 3 (prefix, lat-lon):  9=num₁ 10=dir₁ 11=num₂ 12=dir₂
-     * - Branch 4 (prefix, lon-lat): 13=num₁ 14=dir₁ 15=num₂ 16=dir₂
+     * Lookbehind/ahead `(?<![a-zA-Z])` … `(?![a-zA-Z])` prevents matching letters
+     * inside words (e.g. the “N” in “inReach”).
      */
     private val MASTER_PATTERN = Regex(
         """(?i)(?<![a-zA-Z])(?:""" +
@@ -149,15 +129,9 @@ object GpsCoordinateParser {
             """)(?![a-zA-Z])""",
     )
 
-    /**
-     * Try to parse GPS coordinates from a string containing text.
-     * Uses a single master regex to match both coordinates at once,
-     * then validates the matched groups.
-     * Returns null if no valid coordinates are found.
-     */
+    /** Parse lat+lon from already-normalized text, or null. Call [normalizeOcrText] first. */
     fun parseFromText(text: String): GpsCoordinates? {
-        val normalized = normalizeOcrText(text)
-        val match = MASTER_PATTERN.find(normalized) ?: return null
+        val match = MASTER_PATTERN.find(text) ?: return null
 
         // Determine which branch matched and extract dir1/num1/dir2/num2
         val groups = extractMatchGroups(match) ?: return null
@@ -192,9 +166,25 @@ object GpsCoordinateParser {
         return GpsCoordinates(lat, lon, format)
     }
 
+    /** "This block contains a coordinate" — used only to highlight OCR regions (RAW text: normalization would mangle words into fake tokens). */
+    fun looksLikeCoordinate(blockText: String): Boolean =
+        LETTER_WITH_NUMBER.containsMatchIn(blockText)
+
     /**
-     * Holds the extracted direction letters, number strings, and whether lat came first.
+     * Relaxed number pattern for block classification (not parsing).
+     * Accepts ≥2 digits with optional decimals or `° ' "` unit marks.
+     * More permissive than [COORD_NUMBER] to avoid false negatives when scanning raw OCR blocks.
      */
+    private const val COORDISH_NUMBER = "\\d{2,3}(?:[.,]\\d+|[°']\\d{0,3}(?:[.,]\\d+)?['\"]?[°']?)*"
+
+    /** One direction letter adjacent to one coordinate number (either order). */
+    private val LETTER_WITH_NUMBER = Regex(
+        """(?<![a-zA-Z])[NSEW]\s*$COORDISH_NUMBER(?![a-zA-Z\d])|""" +
+            """(?<![a-zA-Z])$COORDISH_NUMBER\s*[NSEW](?![a-zA-Z\d])""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** Matched direction/number per side + which came first. */
     private data class MatchGroups(
         val dir1: String,
         val num1Str: String,
@@ -203,14 +193,10 @@ object GpsCoordinateParser {
         val latFirst: Boolean,
     )
 
-    /**
-     * Extract dir1/num1/dir2/num2 and whether lat came first from a master-regex match.
-     * Returns null if no branch matched (shouldn't happen).
-     */
+    /** Which side holds latitude (from the matched branch). */
     private fun extractMatchGroups(match: MatchResult): MatchGroups? {
         val g = match.groups
         return when {
-            // Branch 1 (suffix, lat-lon): groups 1-4 = dir₁,num₁,dir₂,num₂
             g[1] != null -> MatchGroups(
                 g[1]!!.value,
                 g[2]!!.value,
@@ -218,7 +204,6 @@ object GpsCoordinateParser {
                 g[4]!!.value,
                 latFirst = true
             )
-            // Branch 2 (suffix, lon-lat): groups 5-8 = dir₁,num₁,dir₂,num₂
             g[5] != null -> MatchGroups(
                 g[5]!!.value,
                 g[6]!!.value,
@@ -226,7 +211,6 @@ object GpsCoordinateParser {
                 g[8]!!.value,
                 latFirst = false
             )
-            // Branch 3 (prefix, lat-lon): groups 9-12 = num₁,dir₁,num₂,dir₂ → reorder
             g[9] != null -> MatchGroups(
                 g[10]!!.value,
                 g[9]!!.value,
@@ -234,7 +218,6 @@ object GpsCoordinateParser {
                 g[11]!!.value,
                 latFirst = true
             )
-            // Branch 4 (prefix, lon-lat): groups 13-16 = num₁,dir₁,num₂,dir₂ → reorder
             g[13] != null -> MatchGroups(
                 g[14]!!.value,
                 g[13]!!.value,
@@ -247,19 +230,14 @@ object GpsCoordinateParser {
         }
     }
 
-    /**
-     * Detect coordinate format from a matched number string.
-     */
+    /** Format of a given number string. */
     private fun detectFormat(numberStr: String): CoordinateFormat = when {
         numberStr.contains("\"") -> CoordinateFormat.DEGREES_MINUTES_SECONDS
         numberStr.contains("°") -> CoordinateFormat.DEGREES_MINUTES
         else -> CoordinateFormat.DEGREES
     }
 
-    /**
-     * Parse a coordinate number string to decimal degrees.
-     * Dispatches to the appropriate parser based on the detected format.
-     */
+    /** String → decimal degrees, or null if malformed. */
     private fun parseCoordinateNumber(text: String): Double? {
         val trimmed = text.trim()
         return when {
@@ -294,16 +272,10 @@ object GpsCoordinateParser {
 
     // --- Single value parsers (for manual editing) ---
 
-    fun parseLatitude(
-        text: String,
-        @Suppress("UNUSED_PARAMETER") format: CoordinateFormat
-    ): Double? =
+    fun parseLatitude(text: String): Double? =
         parseSingleValue(text, isLatitude = true)
 
-    fun parseLongitude(
-        text: String,
-        @Suppress("UNUSED_PARAMETER") format: CoordinateFormat
-    ): Double? =
+    fun parseLongitude(text: String): Double? =
         parseSingleValue(text, isLatitude = false)
 
     /**

@@ -26,3 +26,16 @@
 
 -dontwarn com.google.mlkit.**
 -dontwarn com.google.android.gms.internal.mlkit_**
+
+# ============================================================================
+# Strip debug logging in release builds
+# ============================================================================
+# Log.d and Log.v are used extensively for development diagnostics.
+# These calls have no side effects, so R8 can safely remove them in release.
+# Log.w and Log.e are retained for crash diagnostics.
+# ============================================================================
+
+-assumenosideeffects class android.util.Log {
+    public static *** d(...);
+    public static *** v(...);
+}

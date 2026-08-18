@@ -5,35 +5,42 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.viewinterop.AndroidView
+import android.util.Log
 import cz.litoj.grs.CameraReaderService
 import cz.litoj.grs.CropParams
 import cz.litoj.grs.R
+
+private const val TAG = "CameraPreviewSection"
+
+/** Width ratio of the scan-box overlay relative to the preview area. */
+private const val SCAN_BOX_WIDTH_RATIO = 0.85f
+
+/** Height of the scan-box overlay. */
+private val SCAN_BOX_HEIGHT = 120.dp
 
 @Composable
 fun CameraPreviewSection(
@@ -43,12 +50,18 @@ fun CameraPreviewSection(
     lastRawText: String,
     pendingScan: Boolean,
     onScanTriggered: () -> Unit,
+    isCameraActive: Boolean,
+    onScanNow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Start the camera once permission is granted
-    LaunchedEffect(hasCameraPermission) {
-        if (hasCameraPermission) {
+    // Start/stop the camera based on permission and active state
+    LaunchedEffect(hasCameraPermission, isCameraActive) {
+        if (hasCameraPermission && isCameraActive) {
+            Log.d(TAG, "Starting camera")
             cameraReaderService.start()
+        } else if (!isCameraActive) {
+            Log.d(TAG, "Stopping camera")
+            cameraReaderService.stopCamera()
         }
     }
 
@@ -60,8 +73,6 @@ fun CameraPreviewSection(
         }
     }
 
-    val autoScan by cameraReaderService.autoScan.collectAsState()
-    val isScanning by cameraReaderService.scanState.collectAsState()
     val density = LocalDensity.current
 
     // Measure the preview area and update the OCR crop region to match the scan-box overlay
@@ -71,27 +82,39 @@ fun CameraPreviewSection(
             .onGloballyPositioned { coords ->
                 val w = coords.size.width
                 val h = coords.size.height
-                if (w > 0 && h > 0) {
+                if ((w > 0) && (h > 0)) {
                     cameraReaderService.cropParams = CropParams(
                         screenWidthPx = w,
                         previewHeightPx = h,
-                        overlayWidthPx = (w * 0.85f).toInt(),
-                        overlayHeightPx = with(density) { 120.dp.toPx() }.toInt(),
+                        overlayWidthPx = (w * SCAN_BOX_WIDTH_RATIO).toInt(),
+                        overlayHeightPx = with(density) { SCAN_BOX_HEIGHT.toPx() }.toInt(),
                     )
                 }
             },
     ) {
         if (hasCameraPermission) {
-            AndroidView(
-                factory = { cameraReaderService.previewView },
-                modifier = Modifier.fillMaxSize(),
-            )
+            // Camera preview - only shown when active
+            if (isCameraActive) {
+                AndroidView(
+                    factory = { cameraReaderService.previewView },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                // Camera is off - show blank background instead of camera view
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+            }
 
+            // Scan box overlay - ALWAYS visible
             ScanBoxOverlay()
 
+            // OCR text preview - ALWAYS visible when there's content
             if (lastRawText.isNotBlank()) {
                 Text(
-                    text = "OCR: ${lastRawText.replace("\n", " \u21B5")}",
+                    text = stringResource(R.string.ocr_prefix, lastRawText.replace("\n", " \u21B5")),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White,
                     maxLines = 2,
@@ -103,54 +126,36 @@ fun CameraPreviewSection(
                 )
             }
 
-            // Auto/Manual scan toggle (top-right)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .background(
-                        Color.Black.copy(alpha = 0.5f),
-                        RoundedCornerShape(16.dp),
-                    )
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                Text(
-                    text = "Continuous scan",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White,
-                )
-                Switch(
-                    checked = autoScan,
-                    onCheckedChange = { cameraReaderService.toggleAutoScan() },
-                )
-            }
-
-            // Scan Now floating button (bottom center, manual mode only)
-            if (!autoScan) {
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        if (isScanning) cameraReaderService.stopScanning()
-                        else cameraReaderService.startScanning()
-                    },
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_document_scanner),
-                            contentDescription = "Scan",
-                        )
-                    },
-                    text = {
-                        Text(if (isScanning) "Scanning\u2026" else "Scan Now")
-                    },
+            // "Camera is off" message and "Scan Now" button - only when camera is inactive
+            if (!isCameraActive) {
+                Column(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp),
-                )
+                        .fillMaxSize()
+                        .wrapContentSize(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.camera_is_off),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White,
+                    )
+                    
+                    ExtendedFloatingActionButton(
+                        onClick = onScanNow,
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_document_scanner),
+                                contentDescription = stringResource(R.string.scan),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.scan_now)) },
+                    )
+                }
             }
         } else {
             Text(
-                text = "Camera permission required\nfor coordinate scanning",
+                text = stringResource(R.string.camera_permission_required),
                 color = Color.White,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
@@ -178,8 +183,8 @@ private fun ScanBoxOverlay() {
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .fillMaxWidth(0.85f)
-                .height(120.dp)
+                .fillMaxWidth(SCAN_BOX_WIDTH_RATIO)
+                .height(SCAN_BOX_HEIGHT)
                 .background(Color.Transparent)
                 .border(
                     width = 2.dp,

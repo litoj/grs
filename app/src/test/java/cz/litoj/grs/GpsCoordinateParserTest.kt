@@ -1,8 +1,10 @@
 package cz.litoj.grs
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GpsCoordinateParserTest {
@@ -238,7 +240,7 @@ class GpsCoordinateParserTest {
     @Test
     fun `OCR errors in digits are corrected`() {
         // O instead of 0
-        val result = GpsCoordinateParser.parseFromText("N 5O.123456 E 14.456789")
+        val result = GpsCoordinateParser.parseFromText(GpsCoordinateParser.normalizeOcrText("N 5O.123456 E 14.456789"))
         assertNotNull(result)
         assertEquals(50.123456, result!!.latitude, 0.0001)
         assertEquals(14.456789, result.longitude, 0.0001)
@@ -248,7 +250,7 @@ class GpsCoordinateParserTest {
 
     @Test
     fun `random spaces within decimal coordinate are removed`() {
-        val result = GpsCoordinateParser.parseFromText("N 5 0. 1 2 3 4 5 6 E 1 4. 4 5 6 7 8 9")
+        val result = GpsCoordinateParser.parseFromText(GpsCoordinateParser.normalizeOcrText("N 5 0. 1 2 3 4 5 6 E 1 4. 4 5 6 7 8 9"))
         assertNotNull(result)
         assertEquals(50.123456, result!!.latitude, 0.0001)
         assertEquals(14.456789, result.longitude, 0.0001)
@@ -256,7 +258,7 @@ class GpsCoordinateParserTest {
 
     @Test
     fun `random spaces within DMS coordinate are removed`() {
-        val result = GpsCoordinateParser.parseFromText("""N 5 0° 1 0' 3 0" E 1 4° 2 9' 1 5"""")
+        val result = GpsCoordinateParser.parseFromText(GpsCoordinateParser.normalizeOcrText("""N 5 0° 1 0' 3 0" E 1 4° 2 9' 1 5""""))
         assertNotNull(result)
         assertEquals(50.175, result!!.latitude, 0.0001)
         assertEquals(14.4875, result.longitude, 0.0001)
@@ -264,7 +266,7 @@ class GpsCoordinateParserTest {
 
     @Test
     fun `random spaces within DM coordinate are removed`() {
-        val result = GpsCoordinateParser.parseFromText("N 5 0° 1 0.0 5 0 E 1 4° 2 9.1 2 3")
+        val result = GpsCoordinateParser.parseFromText(GpsCoordinateParser.normalizeOcrText("N 5 0° 1 0.0 5 0 E 1 4° 2 9.1 2 3"))
         assertNotNull(result)
         assertEquals(50.16750, result!!.latitude, 0.0001)
         assertEquals(14.48538, result.longitude, 0.0001)
@@ -276,5 +278,48 @@ class GpsCoordinateParserTest {
         assertNotNull(result)
         assertEquals(50.123456, result!!.latitude, 0.0001)
         assertEquals(14.456789, result.longitude, 0.0001)
+    }
+
+    // --- looksLikeCoordinate (block classification for UI focus) ---
+
+    @Test
+    fun `looksLikeCoordinate - adjacent letter-number tokens`() {
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("N50"))
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("50N"))
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("N 50.123456"))
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("50.123456 N"))
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("N50°12'30\" E14°29'15\""))
+    }
+
+    @Test
+    fun `looksLikeCoordinate - multiple valid tokens in one block`() {
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("N50 E14"))
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("Lat N50.1 Lon E14.4"))
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("50.1N 14.4E"))
+    }
+
+    @Test
+    fun `looksLikeCoordinate - rejects consecutive letters`() {
+        for (s in listOf("WB50", "50NO", "NEW", "50 EAST", "WGS84")) {
+            assertFalse("unexpected match on: '$s'", GpsCoordinateParser.looksLikeCoordinate(s))
+        }
+    }
+
+    @Test
+    fun `looksLikeCoordinate - rejects letter-free or number-free text`() {
+        for (s in listOf("no coordinates here", "N", "50.123", "12345")) {
+            assertFalse("unexpected match on: '$s'", GpsCoordinateParser.looksLikeCoordinate(s))
+        }
+    }
+
+    @Test
+    fun `looksLikeCoordinate - matches raw unit-mark tokens`() {
+        // raw matching (normalize() is NOT applied) — °/'/" don't break tokens
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("50'N"))
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("E14°29'15\""))
+        // letter attached to ≥2-digit number
+        assertTrue(GpsCoordinateParser.looksLikeCoordinate("N50"))
+        // single digit after letter is too little for a coordinate
+        assertFalse(GpsCoordinateParser.looksLikeCoordinate("N5O"))
     }
 }

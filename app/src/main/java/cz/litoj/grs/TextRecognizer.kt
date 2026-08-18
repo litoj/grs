@@ -20,13 +20,20 @@ class TextRecognizer {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
     /**
-     * Run text recognition on the given image.
+     * Run text recognition on the given image and return the raw text.
      */
-    suspend fun recognizeText(image: InputImage): String? {
+    suspend fun recognizeText(image: InputImage): String? =
+        recognizeImage(image)?.text
+
+    /**
+     * Run text recognition and return the full ML Kit [Text] result,
+     * including per-block/line/element bounding boxes in input-image coordinates.
+     */
+    suspend fun recognizeImage(image: InputImage): Text? {
         return try {
-            processImage(image)?.text
+            processImage(image)
         } catch (e: Exception) {
-            Log.e(TAG, "recognizeText error", e)
+            Log.e(TAG, "recognizeImage error", e)
             null
         }
     }

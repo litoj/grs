@@ -14,6 +14,13 @@ Point the camera at any screen or display showing coordinates — a trail camera
    - **Auto** — detects the format automatically
 3. **Mock** — Parsed coordinates are pushed to Android's `LocationManager` test providers (`GPS_PROVIDER` and `NETWORK_PROVIDER`), overriding your real GPS location for all apps on the device.
 
+Coordinates can also be set from a **still image** instead of the live camera:
+
+- **From your gallery** — Menu → **Load from file** (opens your gallery app), or using the Load button.
+- **From another app** — Use the system share sheet (*Share → GPS Read & Spoof*) from Google Photos, Files, a browser, etc.
+
+The whole image is OCRed (no crop box), and coordinates are parsed exactly like camera OCR. If none are found, a dialog shows the image zoomed into the detected text (red boxes) with the recognized text pre-filled — fix OCR mistakes there and tap **Match**.
+
 ### Supported coordinate layouts
 
 The parser handles all combinations of direction-letter position (prefix/suffix) and lat/lon order:
@@ -34,6 +41,8 @@ The parser handles all combinations of direction-letter position (prefix/suffix)
 - **Manual editing** — lat/lon fields are editable. Type or paste coordinates in any supported format with or without direction letters.
 - **Live mock refresh** — mock location is refreshed every second to ensure it persists for apps that poll GPS independently.
 - **OCR preview** — the raw OCR text is shown at the top of the camera preview so you can verify what was read.
+- **Load from image** — set coordinates from an existing photo via your gallery app or the system share sheet. No gallery/photos permission is required: the system photo picker and share intents grant read access to just that one image.
+- **Edit & match** — failed image scans can be corrected in place: edit the OCR text, and the app re-runs the parser on your edit.
 
 ## Requirements
 
@@ -64,6 +73,7 @@ The parser handles all combinations of direction-letter position (prefix/suffix)
 app/src/main/java/cz/litoj/grs/
 ├── MainActivity.kt              — Entry point, permissions, intent handling
 ├── CameraReaderService.kt       — CameraX preview + image analysis, scan modes
+├── ImageOcrAssistant.kt         — Decode / EXIF-rotate still images, OCR, extract coordinates
 ├── TextRecognizer.kt            — ML Kit OCR wrapper
 ├── GpsCoordinateParser.kt       — OCR normalization, coordinate regex parsing & validation
 ├── LocationMocker.kt            — Test provider registration & mock location updates
@@ -72,7 +82,7 @@ app/src/main/java/cz/litoj/grs/
     ├── GrsScreen.kt             — Main screen layout & snackbar event handling
     ├── CameraPreviewSection.kt  — Camera preview, scan-box overlay, scan controls
     ├── CoordinateInputSection.kt— Lat/lon text fields, format selector, mocking lifecycle
-    └── theme/                   — Material 3 theme, colors, typography
+    └── theme/                   — Material 3 theme (dynamic color + fallbacks)
 ```
 
 ## Building
@@ -82,6 +92,28 @@ app/src/main/java/cz/litoj/grs/
 ```
 
 For release builds, place a `keystore.properties` file in the project root with your signing credentials. If the file is absent, the release build type falls back to the debug signing config.
+
+## Development
+
+### Testing
+
+Unit tests cover the core parsing logic (`GpsCoordinateParser`) and ViewModel state management (`GpsSpoofViewModel`). Run them with:
+
+```bash
+./gradlew test
+```
+
+Components that depend on camera hardware, ML Kit, or Android framework services (`CameraReaderService`, `ImageOcrAssistant`, `TextRecognizer`, `LocationMocker`) are not unit-tested. Strategies for testing them:
+
+- **Extract pure functions** — crop math, sample-size computation, and preview-rect union are pure logic currently embedded in camera/OCR classes. Extracting them into standalone functions makes them unit-testable with no Android dependencies.
+- **Interface mocking** — wrap `TextRecognizer` behind an interface so tests can inject a fake that returns canned OCR output, enabling end-to-end pipeline tests without ML Kit.
+- **Robolectric** — provides a simulated Android environment for JVM tests, enabling tests for `LocationMocker` (via `LocationManager` shadows) and `ImageOcrAssistant` file I/O without an emulator.
+- **Instrumented tests** — golden-image tests (known images → known coordinates) and `LocationMocker` integration with a real `LocationManager` on a device. Note that mock-location instrumented tests require the test app to be selected as the mock location app in Developer Options.
+
+### Architecture notes
+
+- The ViewModel is created directly in `MainActivity` and does not survive configuration changes. If state preservation across rotation becomes important, switch to `by viewModels()`.
+- `parseFromText` expects pre-normalized text — callers must run `normalizeOcrText` before parsing.
 
 ## License
 

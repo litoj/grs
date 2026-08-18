@@ -9,6 +9,7 @@ import android.location.LocationManager
 import android.location.provider.ProviderProperties
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.content.ContextCompat
 
 /**
@@ -31,13 +32,29 @@ class LocationMocker(private val context: Context) {
 
     private var isMocking = false
 
+    companion object {
+        private const val TAG = "LocationMocker"
+
+        // ProviderProperties constants for API < 31 (ProviderProperties requires API 31+)
+        private const val LEGACY_POWER_USAGE_HIGH = 3
+        private const val LEGACY_POWER_USAGE_LOW = 1
+        private const val LEGACY_ACCURACY_FINE = 1
+        private const val LEGACY_ACCURACY_COARSE = 2
+    }
+
+    /**
+     * Validate that coordinates are within valid ranges.
+     */
+    private fun isValidCoordinate(lat: Double, lon: Double): Boolean =
+        (lat in -90.0..90.0) && (lon in -180.0..180.0)
+
     /**
      * Check if we have the required location permissions
      */
     fun hasLocationPermissions(): Boolean {
         return ContextCompat.checkSelfPermission(
             context,
-            Manifest.permission.ACCESS_FINE_LOCATION
+            Manifest.permission.ACCESS_FINE_LOCATION,
         ) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -49,43 +66,32 @@ class LocationMocker(private val context: Context) {
     fun startMocking(latitude: Double, longitude: Double): Boolean {
         if (isMocking) return true
 
-        android.util.Log.d(
-            "LocationMocker",
-            "startMocking: lat=$latitude lon=$longitude"
-        )
-        android.util.Log.d(
-            "LocationMocker",
-            "hasLocationPermissions=${hasLocationPermissions()}"
-        )
+        if (!isValidCoordinate(latitude, longitude)) {
+            Log.w(TAG, "startMocking: invalid coordinates lat=$latitude lon=$longitude")
+            return false
+        }
+
+        Log.d(TAG, "startMocking: lat=$latitude lon=$longitude")
+        Log.d(TAG, "hasLocationPermissions=${hasLocationPermissions()}")
 
         return try {
             addTestProviders()
             if (activeProviders.isEmpty()) {
-                android.util.Log.e(
-                    "LocationMocker",
-                    "startMocking: no test providers could be added"
-                )
+                Log.e(TAG, "startMocking: no test providers could be added")
                 return false
             }
             // Set isMocking BEFORE updating so updateMockLocation doesn't bail out
             isMocking = true
             updateMockLocation(latitude, longitude)
-            android.util.Log.d(
-                "LocationMocker",
-                "startMocking: SUCCESS (providers=$activeProviders)"
-            )
+            Log.d(TAG, "startMocking: SUCCESS (providers=$activeProviders)")
             true
         } catch (e: SecurityException) {
-            android.util.Log.e(
-                "LocationMocker",
-                "startMocking: SecurityException - app not selected as mock location app",
-                e
-            )
+            Log.e(TAG, "startMocking: SecurityException - app not selected as mock location app", e)
             isMocking = false
             cleanupProviders()
             false
         } catch (e: Exception) {
-            android.util.Log.e("LocationMocker", "startMocking: error", e)
+            Log.e(TAG, "startMocking: error", e)
             isMocking = false
             cleanupProviders()
             false
@@ -99,10 +105,12 @@ class LocationMocker(private val context: Context) {
     fun updateMockLocation(latitude: Double, longitude: Double): Boolean {
         if (!isMocking) return false
 
-        android.util.Log.d(
-            "LocationMocker",
-            "updateMockLocation: lat=$latitude lon=$longitude"
-        )
+        if (!isValidCoordinate(latitude, longitude)) {
+            Log.w(TAG, "updateMockLocation: invalid coordinates lat=$latitude lon=$longitude")
+            return false
+        }
+
+        Log.d(TAG, "updateMockLocation: lat=$latitude lon=$longitude")
 
         return try {
             val now = System.currentTimeMillis()
@@ -115,23 +123,19 @@ class LocationMocker(private val context: Context) {
                         longitude,
                         provider,
                         now,
-                        elapsedNanos
+                        elapsedNanos,
                     )
                     locationManager.setTestProviderLocation(
                         provider,
                         mockLocation
                     )
                 } catch (e: Exception) {
-                    android.util.Log.w(
-                        "LocationMocker",
-                        "Failed to set location on $provider",
-                        e
-                    )
+                    Log.w(TAG, "Failed to set location on $provider", e)
                 }
             }
             true
         } catch (e: Exception) {
-            android.util.Log.e("LocationMocker", "updateMockLocation error", e)
+            Log.e(TAG, "updateMockLocation error", e)
             false
         }
     }
@@ -162,33 +166,31 @@ class LocationMocker(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     private fun addTestProviders() {
-        // ProviderProperties constants require API 31+, use raw values on API 30
         val powerHigh = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             ProviderProperties.POWER_USAGE_HIGH
         } else {
-            3  // POWER_USAGE_HIGH
+            LEGACY_POWER_USAGE_HIGH
         }
         val powerLow = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             ProviderProperties.POWER_USAGE_LOW
         } else {
-            1  // POWER_USAGE_LOW
+            LEGACY_POWER_USAGE_LOW
         }
         val accuracyFine = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             ProviderProperties.ACCURACY_FINE
         } else {
-            1  // ACCURACY_FINE
+            LEGACY_ACCURACY_FINE
         }
         val accuracyCoarse =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 ProviderProperties.ACCURACY_COARSE
             } else {
-                2  // ACCURACY_COARSE
+                LEGACY_ACCURACY_COARSE
             }
 
         // GPS provider: high power, fine accuracy
         addSingleTestProvider(
             provider = LocationManager.GPS_PROVIDER,
-            requiresNetwork = true,
             requiresCell = false,
             powerUsage = powerHigh,
             accuracy = accuracyFine,
@@ -197,7 +199,6 @@ class LocationMocker(private val context: Context) {
         // Network provider: low power, coarse accuracy
         addSingleTestProvider(
             provider = LocationManager.NETWORK_PROVIDER,
-            requiresNetwork = true,
             requiresCell = true,
             powerUsage = powerLow,
             accuracy = accuracyCoarse,
@@ -211,10 +212,7 @@ class LocationMocker(private val context: Context) {
         // session (e.g. after an app update). removeTestProvider restores the original provider.
         try {
             locationManager.removeTestProvider("fused")
-            android.util.Log.d(
-                "LocationMocker",
-                "Removed stale fused test provider"
-            )
+            Log.d(TAG, "Removed stale fused test provider")
         } catch (_: Exception) {
             // No stale fused test provider to remove, that's fine
         }
@@ -227,7 +225,6 @@ class LocationMocker(private val context: Context) {
     @SuppressLint("MissingPermission")
     private fun addSingleTestProvider(
         provider: String,
-        requiresNetwork: Boolean,
         requiresCell: Boolean,
         powerUsage: Int,
         accuracy: Int,
@@ -242,7 +239,7 @@ class LocationMocker(private val context: Context) {
         try {
             locationManager.addTestProvider(
                 provider,
-                requiresNetwork,
+                true,  // requiresNetwork
                 false,  // requiresSatellite
                 requiresCell,
                 false,  // hasMonetaryCost
@@ -254,16 +251,9 @@ class LocationMocker(private val context: Context) {
             )
             locationManager.setTestProviderEnabled(provider, true)
             activeProviders.add(provider)
-            android.util.Log.d(
-                "LocationMocker",
-                "Added test provider: $provider"
-            )
+            Log.d(TAG, "Added test provider: $provider")
         } catch (e: Exception) {
-            android.util.Log.w(
-                "LocationMocker",
-                "Could not add test provider: $provider",
-                e
-            )
+            Log.w(TAG, "Could not add test provider: $provider", e)
         }
     }
 
@@ -291,11 +281,6 @@ class LocationMocker(private val context: Context) {
         }
         activeProviders.clear()
     }
-
-    /**
-     * Check if currently mocking location
-     */
-    fun getIsMocking(): Boolean = isMocking
 
     /**
      * Clean up resources

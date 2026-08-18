@@ -2,13 +2,7 @@ package cz.litoj.grs.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,21 +16,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import cz.litoj.grs.R
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.TextButton
 import cz.litoj.grs.CoordinateFormat
 import cz.litoj.grs.GpsSpoofViewModel
 import cz.litoj.grs.LocationMocker
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CoordinateInputSection(
     viewModel: GpsSpoofViewModel,
     hasLocationPermission: Boolean,
+    onMenuClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
-    var expanded by remember { mutableStateOf(false) }
 
     val locationMocker = remember { LocationMocker(context) }
     var isMocking by remember { mutableStateOf(false) }
@@ -65,9 +63,7 @@ fun CoordinateInputSection(
             if (success) {
                 isMocking = true
             } else {
-                viewModel.emitMockError(
-                    "Mocking not active. Click to open Settings to choose this app for location mocking."
-                )
+                viewModel.emitMockError()
                 return@LaunchedEffect
             }
         }
@@ -79,7 +75,7 @@ fun CoordinateInputSection(
     LaunchedEffect(isMocking, uiState.currentCoordinates) {
         if (!isMocking) return@LaunchedEffect
         while (true) {
-            kotlinx.coroutines.delay(1000)
+            kotlinx.coroutines.delay(1000L)
             val coords = uiState.currentCoordinates ?: break
             locationMocker.updateMockLocation(coords.latitude, coords.longitude)
         }
@@ -93,7 +89,7 @@ fun CoordinateInputSection(
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedTextField(
             value = latText,
@@ -101,7 +97,7 @@ fun CoordinateInputSection(
                 latText = it
                 viewModel.updateLatitude(it)
             },
-            label = { Text("Lat (N/S)") },
+            label = { Text(stringResource(R.string.lat_label)) },
             singleLine = true,
             enabled = hasLocationPermission,
             modifier = Modifier.weight(1f),
@@ -114,47 +110,24 @@ fun CoordinateInputSection(
                 lonText = it
                 viewModel.updateLongitude(it)
             },
-            label = { Text("Lon (E/W)") },
+            label = { Text(stringResource(R.string.lon_label)) },
             singleLine = true,
             enabled = hasLocationPermission,
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(8.dp),
         )
 
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = it },
-            modifier = Modifier.weight(1f),
+        // Overflow menu button
+        TextButton(
+            onClick = onMenuClick,
+            enabled = hasLocationPermission,
         ) {
-            OutlinedTextField(
-                value = uiState.selectedFormat.displayName,
-                onValueChange = {},
-                label = { Text("Format") },
-                readOnly = true,
-                enabled = hasLocationPermission,
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                },
-                modifier = Modifier
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    .fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
+            Text(
+                text = "⋮",
+                style = TextStyle(fontSize = 24.sp),
             )
-
-            androidx.compose.material3.DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                CoordinateFormat.entries.forEach { format ->
-                    DropdownMenuItem(
-                        text = { Text(format.displayName) },
-                        onClick = {
-                            viewModel.setCoordinateFormat(format)
-                            expanded = false
-                        },
-                    )
-                }
-            }
         }
     }
 }
+
+

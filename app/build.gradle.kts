@@ -63,6 +63,12 @@ android {
 	buildFeatures {
 		compose = true
 	}
+	// Return default values for unmocked Android framework methods in unit
+	// tests instead of throwing. Needed because the ViewModel calls
+	// android.util.Log which isn't mocked in pure JVM tests.
+	testOptions {
+		unitTests.isReturnDefaultValues = true
+	}
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
@@ -74,6 +80,14 @@ dependencies {
 	implementation(libs.androidx.activity.compose)
 	implementation(libs.androidx.compose.material3)
 
+	// Core
+	implementation(libs.androidx.core.ktx)
+	implementation(libs.androidx.lifecycle.runtime.ktx)
+
+	// Coroutines
+	implementation(libs.kotlinx.coroutines.android)
+	implementation(libs.kotlinx.coroutines.core)
+
 	// CameraX
 	implementation(libs.androidx.camera.camera2)
 	implementation(libs.androidx.camera.lifecycle)
@@ -81,6 +95,9 @@ dependencies {
 	
 	// ML Kit Text Recognition
 	implementation(libs.mlkit.text.recognition)
+
+	// EXIF orientation handling for gallery/shared images
+	implementation(libs.androidx.exifinterface)
 	
 	testImplementation(libs.junit)
 }

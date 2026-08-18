@@ -1,5 +1,7 @@
 package cz.litoj.grs
 
+import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -7,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+
+private const val TAG = "GpsSpoofViewModel"
 
 /**
  * UI state for GPS Spoof screen
@@ -16,20 +20,38 @@ data class UiState(
     val selectedFormat: CoordinateFormat = CoordinateFormat.AUTO,
     val lastRawText: String = "",
     val pendingScan: Boolean = false,
+    /**
+     * True when the camera should be suspended (e.g. after loading coordinates from a file)
+     * so that continuous OCR can't overwrite the loaded values.
+     * Lifted by “Scan Now”, the scan shortcut, or re-enabling continuous scan.
+     */
+    val isCameraSuspended: Boolean = false,
 )
 
 /**
  * One-time UI events emitted by the ViewModel.
  */
+enum class CoordinateField { LATITUDE, LONGITUDE }
+
 sealed interface GpsEvent {
     /** Mock location failed — show the user an error message. */
-    data class MockError(val message: String) : GpsEvent
+    data object MockError : GpsEvent
 
     /** New coordinates differ too much from current — ask user to confirm. */
     data class PendingCoordinates(
         val coordinates: GpsCoordinates,
         val displayText: String
     ) : GpsEvent
+
+    /**
+     * Loaded-image OCR found no coordinates — offer to edit the OCR'd text and rematch.
+     * [preview] is the loaded image zoomed into the detected text region with
+     * block outlines (null when the image couldn't be decoded).
+     */
+    data class ImageOcrFailure(val rawText: String?, val preview: Bitmap?) : GpsEvent
+
+    /** Manual coordinate input couldn't be parsed — notify the user. */
+    data class InvalidInput(val field: CoordinateField) : GpsEvent
 }
 
 /**
@@ -60,8 +82,27 @@ class GpsSpoofViewModel : ViewModel() {
     /**
      * Emit a mock error event to be shown to the user.
      */
-    fun emitMockError(message: String) {
-        _events.trySend(GpsEvent.MockError(message))
+    fun emitMockError() {
+        _events.trySend(GpsEvent.MockError)
+    }
+
+    /**
+     * Loaded-image OCR produced text but no coordinates — offer the user a
+     * chance to edit the OCR'd text and rematch manually, showing the loaded
+     * image zoomed into the detected text region.
+     */
+    fun onImageOcrFailure(text: String?, preview: Bitmap?) {
+        _events.trySend(GpsEvent.ImageOcrFailure(text, preview))
+    }
+
+    /**
+     * Called when the user confirms edited OCR text from the failure dialog.
+     * Parses it and applies coordinates directly (no "too far" guard — the
+     * user just manually confirmed these).
+     */
+    fun onOcrTextEdited(text: String) {
+        val normalized = GpsCoordinateParser.normalizeOcrText(text)
+        GpsCoordinateParser.parseFromText(normalized)?.let { applyCoordinates(it) }
     }
 
     /**
@@ -77,7 +118,7 @@ class GpsSpoofViewModel : ViewModel() {
             return false
         }
 
-        val result = GpsCoordinateParser.parseFromText(text) ?: return false
+        val result = GpsCoordinateParser.parseFromText(normalized) ?: return false
 
         val current = _uiState.value.currentCoordinates
         if (current != null && isTooFar(current, result)) {
@@ -115,15 +156,11 @@ class GpsSpoofViewModel : ViewModel() {
 
     /**
      * Update latitude from manual editing. Parses the value and updates coordinates.
+     * Emits [GpsEvent.InvalidInput] when the text can't be parsed.
      */
     fun updateLatitude(text: String) {
         val coords = _uiState.value.currentCoordinates
-        val selected = _uiState.value.selectedFormat
-        val displayFormat =
-            if (selected == CoordinateFormat.AUTO) coords?.format
-                ?: CoordinateFormat.DEGREES else selected
-
-        val parsedLat = GpsCoordinateParser.parseLatitude(text, displayFormat)
+        val parsedLat = GpsCoordinateParser.parseLatitude(text)
         if (parsedLat != null) {
             _uiState.update {
                 it.copy(currentCoordinates = GpsCoordinates(
@@ -132,20 +169,19 @@ class GpsSpoofViewModel : ViewModel() {
                     coords?.format ?: CoordinateFormat.DEGREES
                 ))
             }
+        } else {
+            Log.w(TAG, "Failed to parse latitude input: '$text'")
+            _events.trySend(GpsEvent.InvalidInput(CoordinateField.LATITUDE))
         }
     }
 
     /**
      * Update longitude from manual editing. Parses the value and updates coordinates.
+     * Emits [GpsEvent.InvalidInput] when the text can't be parsed.
      */
     fun updateLongitude(text: String) {
         val coords = _uiState.value.currentCoordinates
-        val selected = _uiState.value.selectedFormat
-        val displayFormat =
-            if (selected == CoordinateFormat.AUTO) coords?.format
-                ?: CoordinateFormat.DEGREES else selected
-
-        val parsedLon = GpsCoordinateParser.parseLongitude(text, displayFormat)
+        val parsedLon = GpsCoordinateParser.parseLongitude(text)
         if (parsedLon != null) {
             _uiState.update {
                 it.copy(currentCoordinates = GpsCoordinates(
@@ -154,6 +190,9 @@ class GpsSpoofViewModel : ViewModel() {
                     coords?.format ?: CoordinateFormat.DEGREES
                 ))
             }
+        } else {
+            Log.w(TAG, "Failed to parse longitude input: '$text'")
+            _events.trySend(GpsEvent.InvalidInput(CoordinateField.LONGITUDE))
         }
     }
 
@@ -162,5 +201,14 @@ class GpsSpoofViewModel : ViewModel() {
      */
     fun setCoordinateFormat(format: CoordinateFormat) {
         _uiState.update { it.copy(selectedFormat = format) }
+    }
+
+    /**
+     * Set the camera-suspension flag.
+     * Set to true when loading coordinates from a file (so OCR can't overwrite them);
+     * set to false when the user explicitly scans again.
+     */
+    fun setCameraSuspended(value: Boolean) {
+        _uiState.update { it.copy(isCameraSuspended = value) }
     }
 }
