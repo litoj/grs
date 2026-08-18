@@ -1,6 +1,0 @@
-                    onScanNow = {
-                        android.util.Log.d("GrsScreen", "onScanNow clicked!")
-                        // Always enable auto-scan and start scanning
-                        cameraReaderService.setAutoScan(true)
-                        cameraReaderService.startScanning()
-                    },
