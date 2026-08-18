@@ -1,5 +1,6 @@
 package cz.litoj.grs
 
+import android.content.ComponentName
 import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -20,6 +21,8 @@ data class UiState(
     val selectedFormat: CoordinateFormat = CoordinateFormat.AUTO,
     val lastRawText: String = "",
     val pendingScan: Boolean = false,
+    /** App to launch when coordinates are applied. Null = disabled. */
+    val targetApp: ComponentName? = null,
     /**
      * True when the camera should be suspended (e.g. after loading coordinates from a file)
      * so that continuous OCR can't overwrite the loaded values.
@@ -210,5 +213,10 @@ class GpsSpoofViewModel : ViewModel() {
      */
     fun setCameraSuspended(value: Boolean) {
         _uiState.update { it.copy(isCameraSuspended = value) }
+    }
+
+    /** Set the app to launch when coordinates are applied. Null clears it. */
+    fun setTargetApp(component: ComponentName?) {
+        _uiState.update { it.copy(targetApp = component) }
     }
 }

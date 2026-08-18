@@ -43,6 +43,7 @@ The parser handles all combinations of direction-letter position (prefix/suffix)
 - **OCR preview** — the raw OCR text is shown at the top of the camera preview so you can verify what was read.
 - **Load from image** — set coordinates from an existing photo via your gallery app or the system share sheet. No gallery/photos permission is required: the system photo picker and share intents grant read access to just that one image.
 - **Edit & match** — failed image scans can be corrected in place: edit the OCR text, and the app re-runs the parser on your edit.
+- **Auto-open** — select an app (e.g. Google Maps) to automatically launch when coordinates are mocked. Searchable app picker with icons. The selection persists across app restarts.
 
 ## Requirements
 

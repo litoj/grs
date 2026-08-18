@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import cz.litoj.grs.R
@@ -68,6 +69,15 @@ fun CoordinateInputSection(
             }
         }
         locationMocker.updateMockLocation(coords.latitude, coords.longitude)
+        // Launch the user's selected app so they can verify the mocked location
+        uiState.targetApp?.let { targetApp ->
+            val launchIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                component = targetApp
+            }
+            context.startActivity(launchIntent)
+        }
     }
 
     // Periodically refresh mock location so it persists for apps that poll GPS

@@ -1,5 +1,6 @@
 package cz.litoj.grs.ui
 
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -8,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import cz.litoj.grs.CameraReaderService
 import cz.litoj.grs.CoordinateField
 import cz.litoj.grs.CoordinateFormat
@@ -91,6 +94,22 @@ fun GrsScreen(
     // Retry-dialog state: editable text + optional preview bitmap (null = hidden)
     var ocrEditText by remember { mutableStateOf<String?>(null) }
     var ocrEditPreview by remember { mutableStateOf<Bitmap?>(null) }
+
+    // Persist target app selection across app restarts
+    val prefs = remember { context.getSharedPreferences("grs_settings", android.content.Context.MODE_PRIVATE) }
+
+    // Load saved target app on first composition
+    LaunchedEffect(Unit) {
+        prefs.getString("target_app", null)?.let { flat ->
+            val parts = flat.split("/")
+            if (parts.size == 2) {
+                viewModel.setTargetApp(ComponentName(parts[0], parts[1]))
+            }
+        }
+    }
+
+    // App picker dialog state
+    var showAppPicker by remember { mutableStateOf(false) }
 
     // Camera is active when: an explicit burst scan is running (shortcut or "Scan Now"),
     // or continuous scanning is enabled AND the camera isn't suspended. Suspension
@@ -212,6 +231,16 @@ fun GrsScreen(
             },
         )
     }
+
+    // App picker dialog
+    AppPickerDialog(
+        visible = showAppPicker,
+        onDismiss = { showAppPicker = false },
+        onAppSelected = { component ->
+            viewModel.setTargetApp(component)
+            showAppPicker = false
+        },
+    )
 
     Scaffold(
         snackbarHost = {
@@ -339,6 +368,34 @@ fun GrsScreen(
                                     painter = painterResource(
                                         if (autoScan) R.drawable.ic_scan_on else R.drawable.ic_scan_off
                                     ),
+                                    contentDescription = null,
+                                )
+                            },
+                        )
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                        // Auto-open — shows selected app name or "None"
+                        DropdownMenuItem(
+                            text = {
+                                val targetApp = uiState.targetApp
+                                val label = if (targetApp != null) {
+                                    runCatching {
+                                        context.packageManager.getActivityInfo(targetApp, 0)
+                                            .loadLabel(context.packageManager).toString()
+                                    }.getOrDefault(targetApp.packageName)
+                                } else {
+                                    stringResource(R.string.no_app_selected)
+                                }
+                                Text("${stringResource(R.string.auto_open)}: $label")
+                            },
+                            onClick = {
+                                showAppPicker = true
+                                showMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_open_app),
                                     contentDescription = null,
                                 )
                             },

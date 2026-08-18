@@ -48,4 +48,12 @@
         </activity>
     </application>
 
+    <!-- Visibility for querying installed launcher apps in the app picker dialog -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
 </manifest>
