@@ -18,8 +18,8 @@ android {
 		applicationId = "cz.litoj.grs"
 		minSdk = 26
 		targetSdk = 37
-		versionCode = 2
-		versionName = "1.1.0"
+		versionCode = 3
+		versionName = "1.1.1"
 
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 	}
@@ -54,7 +54,8 @@ android {
 				"proguard-rules.pro",
 			)
 			signingConfig = signingConfigs.getByName("release")
-		}
+        isMinifyEnabled = true
+    }
 	}
 	compileOptions {
 		sourceCompatibility = JavaVersion.VERSION_11
@@ -100,4 +101,6 @@ dependencies {
 	implementation(libs.androidx.exifinterface)
 	
 	testImplementation(libs.junit)
+	testImplementation(libs.mockito.core)
+	testImplementation(libs.kotlinx.coroutines.test)
 }

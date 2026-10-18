@@ -34,9 +34,6 @@ import cz.litoj.grs.CameraReaderService
 import cz.litoj.grs.CropParams
 import cz.litoj.grs.R
 
-private const val TAG = "CameraPreviewSection"
-
-/** Width ratio of the scan-box overlay relative to the preview area. */
 private const val SCAN_BOX_WIDTH_RATIO = 0.85f
 
 /** Height of the scan-box overlay. */
@@ -57,10 +54,8 @@ fun CameraPreviewSection(
     // Start/stop the camera based on permission and active state
     LaunchedEffect(hasCameraPermission, isCameraActive) {
         if (hasCameraPermission && isCameraActive) {
-            Log.d(TAG, "Starting camera")
             cameraReaderService.start()
         } else if (!isCameraActive) {
-            Log.d(TAG, "Stopping camera")
             cameraReaderService.stopCamera()
         }
     }

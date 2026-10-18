@@ -68,10 +68,10 @@ class CameraReaderService(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner,
     private val onTextRecognized: (String) -> Boolean,
+    private val textRecognizer: TextRecognizer = TextRecognizer(),
 ) {
     private val cameraExecutor: ExecutorService =
         Executors.newSingleThreadExecutor()
-    private val textRecognizer = TextRecognizer()
     private val scope = CoroutineScope(Dispatchers.Default)
 
     private val isProcessing = AtomicBoolean(false)
@@ -100,10 +100,12 @@ class CameraReaderService(
     private val _scanState = MutableStateFlow(value = false)
     val scanState: StateFlow<Boolean> = _scanState.asStateFlow()
 
-    /** Preview view for the camera — created once, rendered by the composable. */
-    val previewView: PreviewView = PreviewView(context).apply {
-        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-        scaleType = PreviewView.ScaleType.FILL_CENTER
+    /** Preview view for the camera — created by the composable. */
+    val previewView: PreviewView by lazy {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
     }
 
     /**
@@ -234,7 +236,6 @@ class CameraReaderService(
         }
 
         lastScanTime.set(now)
-        Log.d(TAG, "Processing frame ${imageProxy.width}x${imageProxy.height}")
 
         scope.launch {
             try {
@@ -328,7 +329,6 @@ class CameraReaderService(
         try {
             val cameraProvider = ProcessCameraProvider.getInstance(context).get()
             cameraProvider.unbindAll()
-            Log.d(TAG, "Camera unbound")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to unbind camera", e)
         }

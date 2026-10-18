@@ -71,9 +71,6 @@ class LocationMocker(private val context: Context) {
             return false
         }
 
-        Log.d(TAG, "startMocking: lat=$latitude lon=$longitude")
-        Log.d(TAG, "hasLocationPermissions=${hasLocationPermissions()}")
-
         return try {
             addTestProviders()
             if (activeProviders.isEmpty()) {
@@ -83,7 +80,6 @@ class LocationMocker(private val context: Context) {
             // Set isMocking BEFORE updating so updateMockLocation doesn't bail out
             isMocking = true
             updateMockLocation(latitude, longitude)
-            Log.d(TAG, "startMocking: SUCCESS (providers=$activeProviders)")
             true
         } catch (e: SecurityException) {
             Log.e(TAG, "startMocking: SecurityException - app not selected as mock location app", e)
@@ -109,8 +105,6 @@ class LocationMocker(private val context: Context) {
             Log.w(TAG, "updateMockLocation: invalid coordinates lat=$latitude lon=$longitude")
             return false
         }
-
-        Log.d(TAG, "updateMockLocation: lat=$latitude lon=$longitude")
 
         return try {
             val now = System.currentTimeMillis()
@@ -212,7 +206,6 @@ class LocationMocker(private val context: Context) {
         // session (e.g. after an app update). removeTestProvider restores the original provider.
         try {
             locationManager.removeTestProvider("fused")
-            Log.d(TAG, "Removed stale fused test provider")
         } catch (_: Exception) {
             // No stale fused test provider to remove, that's fine
         }
@@ -251,7 +244,6 @@ class LocationMocker(private val context: Context) {
             )
             locationManager.setTestProviderEnabled(provider, true)
             activeProviders.add(provider)
-            Log.d(TAG, "Added test provider: $provider")
         } catch (e: Exception) {
             Log.w(TAG, "Could not add test provider: $provider", e)
         }

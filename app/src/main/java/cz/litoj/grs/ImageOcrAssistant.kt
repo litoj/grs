@@ -42,8 +42,9 @@ class ImageOcrAssistant(
     private val context: Context,
     private val onTextRecognized: (String) -> Boolean,
     private val onOcrFailure: (String?, Bitmap?) -> Unit = { _, _ -> },
+    private val textRecognizer: TextRecognizer = TextRecognizer(),
+    private val targetDimensionOverride: Int? = null,
 ) {
-    private val textRecognizer = TextRecognizer()
 
     /**
      * Target bitmap dimension (long edge) for both OCR decoding and preview.
@@ -51,7 +52,8 @@ class ImageOcrAssistant(
      * gallery images are processed at the same quality as camera frames.
      */
     private val targetDimension: Int =
-        (context.resources.displayMetrics.widthPixels * TARGET_DIMENSION_RATIO).toInt()
+        targetDimensionOverride
+            ?: (context.resources.displayMetrics.widthPixels * TARGET_DIMENSION_RATIO).toInt()
 
     /**
      * Decode, recognize and process coordinates from an image [uri].
@@ -176,12 +178,6 @@ class ImageOcrAssistant(
                 }
             }.onFailure { Log.w(TAG, "Failed to draw block outlines", it) }
         }
-        Log.d(
-            TAG,
-            "Preview: ${preview.width}x${preview.height}, " +
-                "${coordinateBoxes.size}/${allBoxes.size} coordinate block(s), " +
-                "region $region"
-        )
         return usefulText to preview
     }
 
@@ -203,7 +199,6 @@ class ImageOcrAssistant(
         val cacheFile = File.createTempFile("ocr_image_", ".tmp", context.cacheDir)
         return try {
             cacheFile.outputStream().use { out -> input.use { it.copyTo(out) } }
-            Log.d(TAG, "Cached ${cacheFile.length()} bytes for $uri")
             cacheFile
         } catch (e: Exception) {
             Log.e(TAG, "copyToCache: copy failed", e)
@@ -225,7 +220,6 @@ class ImageOcrAssistant(
             Log.e(TAG, "BitmapFactory bounds decode failed: ${bounds.outWidth}x${bounds.outHeight}")
             return null
         }
-        Log.d(TAG, "Image bounds: ${bounds.outWidth}x${bounds.outHeight}")
 
         val sampleSize = computeSampleSize(bounds.outWidth, bounds.outHeight, targetDimension)
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
@@ -235,7 +229,6 @@ class ImageOcrAssistant(
             Log.e(TAG, "BitmapFactory full decode failed")
             return null
         }
-        Log.d(TAG, "Decoded bitmap: ${bitmap.width}x${bitmap.height} config=${bitmap.config}")
 
         // EXIF orientation
         val orientation = runCatching {
@@ -251,7 +244,8 @@ class ImageOcrAssistant(
     /**
      * Largest power-of-2 sample size that keeps both dimensions ≤ [targetDimension].
      */
-    private fun computeSampleSize(width: Int, height: Int, maxDimension: Int): Int {
+    /** Largest power-of-2 sample size that keeps both dimensions ≤ [maxDimension]. */
+    internal fun computeSampleSize(width: Int, height: Int, maxDimension: Int): Int {
         var sample = 1
         while (width / (sample * 2) >= maxDimension ||
             height / (sample * 2) >= maxDimension
@@ -261,7 +255,7 @@ class ImageOcrAssistant(
         return sample
     }
 
-    private fun applyOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+    internal fun applyOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
         val matrix = Matrix()
         when (orientation) {
             ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
